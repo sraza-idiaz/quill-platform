@@ -1,0 +1,129 @@
+# Ground-truth labels (docs/04 §2). Each "package" is a set of artifacts analyzed
+# together as one run (so cross-artifact contradictions can be seeded). A label is
+# a known deficiency the pipeline SHOULD surface; metrics are computed against this set.
+#
+# Label types (FindingType enum):
+#   missing | inconsistent | weak_narrative | insufficient_evidence
+#   | narrative_present_evidence_unclear
+# An optional `class: evidence` collapses the {weak_narrative,
+# insufficient_evidence, narrative_present_evidence_unclear} family (docs/04 §3).
+#
+# Coverage labels (`missing`) are computed per-baseline rather than enumerated.
+# Setting `expect_missing_for_baseline_moderate: true` on a package tells the
+# harness to expect a `missing` finding for every moderate-baseline control NOT
+# implemented in any artifact of that package.
+
+baseline: moderate
+
+packages:
+
+  - id: pkg_weak_ac2
+    artifacts: [syn_01_weak_ac2.md]
+    expect_missing_for_baseline_moderate: true
+    labels:
+      - { control_id: AC-2, type: insufficient_evidence,
+          class: evidence, severity: high,
+          quoted: "organization-defined frequency",
+          notes: "ODP placeholder (C3, deterministic)" }
+      - { control_id: AU-2, type: insufficient_evidence,
+          class: evidence, severity: medium,
+          quoted: "performs event logging in accordance with policy",
+          notes: "generic restatement; missing event_types + retention + review mechanism" }
+
+  - id: pkg_good_full
+    artifacts: [syn_02_good_full.md]
+    expect_missing_for_baseline_moderate: false   # full coverage of moderate baseline
+    labels: []                                     # negative case: expect no findings
+
+  - id: pkg_arch_conflict
+    artifacts: [syn_07_minimal_only_ac2.md, syn_11_arch_freq_conflict.md]
+    expect_missing_for_baseline_moderate: true
+    labels:
+      - { control_id: AC-2, type: inconsistent, severity: critical,
+          quoted: "reviewed quarterly",
+          notes: "syn_07 says quarterly, syn_11 says annually" }
+
+  - id: pkg_odp_placeholders
+    artifacts: [syn_04_odp_placeholders.md]
+    expect_missing_for_baseline_moderate: true
+    labels:
+      - { control_id: AU-2, type: insufficient_evidence,
+          class: evidence, severity: high,
+          quoted: "[Assignment: organization-defined event types]",
+          notes: "Unfilled ODP placeholder" }
+      - { control_id: CM-2, type: insufficient_evidence,
+          class: evidence, severity: medium,
+          quoted: "updated TBD",
+          notes: "TBD placeholder (C3)" }
+
+  - id: pkg_partial_au2
+    artifacts: [syn_05_partial_au2.md]
+    expect_missing_for_baseline_moderate: true
+    labels:
+      - { control_id: AU-2, type: insufficient_evidence,
+          class: evidence, severity: medium,
+          quoted: "retention period and review mechanism are documented separately",
+          notes: "Required elements deferred to another doc — flag" }
+
+  - id: pkg_doc_boundary
+    artifacts: [syn_06_doc_boundary.md]
+    expect_missing_for_baseline_moderate: true
+    labels:
+      - { control_id: IA-2, type: narrative_present_evidence_unclear,
+          class: evidence, severity: low,
+          quoted: "Mechanism enforcement requires testing",
+          notes: "Doc-boundary case: confirmation requires test method (docs/03 §3.3)" }
+
+  - id: pkg_generic_ac2
+    artifacts: [syn_08_generic_ac2.md]
+    expect_missing_for_baseline_moderate: true
+    labels:
+      - { control_id: AC-2, type: insufficient_evidence,
+          class: evidence, severity: high,
+          quoted: "manages information system accounts in accordance with policy",
+          notes: "Generic restatement; fails C1 + C2" }
+      - { control_id: IA-2, type: insufficient_evidence,
+          class: evidence, severity: medium,
+          quoted: "uniquely identifies and authenticates organizational users",
+          notes: "Restatement; missing authenticator_types + mfa_scope" }
+
+  - id: pkg_oscal_weak
+    artifacts: [syn_10_oscal_weak.json]
+    expect_missing_for_baseline_moderate: true
+    labels:
+      - { control_id: AC-2, type: insufficient_evidence,
+          class: evidence, severity: high,
+          quoted: "organization-defined frequency",
+          notes: "Same ODP gap, surfaced via OSCAL parser" }
+      - { control_id: AU-2, type: insufficient_evidence,
+          class: evidence, severity: medium,
+          quoted: "performs event logging in accordance with policy",
+          notes: "Generic OSCAL statement" }
+
+  - id: pkg_compat_arch
+    artifacts: [syn_02_good_full.md, syn_09_arch_compat.md]
+    expect_missing_for_baseline_moderate: false
+    labels: []   # negative: arch is compatible, no inconsistency
+
+  - id: pkg_au2_weak
+    artifacts: [syn_13_au2_weak.md]
+    expect_missing_for_baseline_moderate: true
+    labels:
+      - { control_id: AU-2, type: insufficient_evidence,
+          class: evidence, severity: medium,
+          quoted: "has event logging enabled",
+          notes: "Vague; missing required elements" }
+
+  - id: pkg_cm2_minimal
+    artifacts: [syn_14_cm2_minimal.md]
+    expect_missing_for_baseline_moderate: true
+    labels:
+      - { control_id: CM-2, type: insufficient_evidence,
+          class: evidence, severity: medium,
+          quoted: "documented per the system inventory",
+          notes: "Lacks change_control mechanism" }
+
+  - id: pkg_sc7_si4
+    artifacts: [syn_12_sc7_si4_addressed.md]
+    expect_missing_for_baseline_moderate: true
+    labels: []   # negative for SC-7 and SI-4 only; other controls flagged as missing by baseline

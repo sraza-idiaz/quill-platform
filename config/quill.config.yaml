@@ -1,0 +1,42 @@
+# QUILL runtime config. Read at startup; air-gap + tier toggles are the safety-critical knobs.
+version: 1
+
+# Safety / deployment (docs/05)
+# NOTE: this config is in DEMO mode — air_gap is OFF because the active model
+# is a :cloud variant served by Ollama Cloud. Artifact text DOES leave the box.
+# Production deployments MUST flip air_gap back to true and use a local model
+# (e.g. mistral:7b or mistral-small:24b).
+air_gap: false                # DEMO — was true; flipped for Ollama Cloud Tier 2
+tier3_enabled: false          # cloud Tier 3 (Claude) still OFF
+
+# Tier 2 — Ollama. DEMO: gemma4:31b-cloud (Ollama Cloud).
+# Production: mistral:7b or mistral-small:24b pulled locally.
+ollama:
+  host: "http://localhost:11434"
+  model: "gemma4:31b-cloud"
+enable_tier2_at_startup: true
+
+# Tier 1 retrieval (local; configured at WP-3 / T-3.1)
+retrieval:
+  embedding_model: "local"    # placeholder until T-3.1
+  top_k: 8
+
+# Confidence + breaker (mirror rubric.yaml; rubric is authoritative)
+confidence:
+  emit: 0.75
+  needs_review: 0.50
+  defer_below: 0.50
+circuit_breaker:
+  threshold: 3
+
+# Catalog / rubric paths
+catalog_path: "config/catalog.yaml"
+rubric_path: "config/rubric.yaml"
+
+# Ingestion
+ingest:
+  watch_folder: null          # set a path to enable folder-watch (FR-ING-07)
+  max_artifact_mb: 50
+
+# Tenancy
+tenant: "default"

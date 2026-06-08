@@ -1,0 +1,326 @@
+{
+  "analyzer": "mock",
+  "generated_at": "2026-06-08T13:47:48.893691+00:00",
+  "packages": 12,
+  "metrics": {
+    "deficiency_detection_recall": 0.982,
+    "narrative_recall": 0.923,
+    "coverage_recall": 1.0,
+    "inconsistency_recall": 1.0,
+    "false_positive_rate": 0.108,
+    "precision": 0.892,
+    "traceability": 1.0,
+    "severity_within_one": 1.0,
+    "calibration": {
+      "monotonic": true,
+      "expected_calibration_error": 0.0639,
+      "buckets": [
+        {
+          "range": [
+            0.5,
+            0.6
+          ],
+          "findings": 0,
+          "correct": 0,
+          "empirical": 0.0,
+          "mean_conf": 0.0
+        },
+        {
+          "range": [
+            0.6,
+            0.7
+          ],
+          "findings": 0,
+          "correct": 0,
+          "empirical": 0.0,
+          "mean_conf": 0.0
+        },
+        {
+          "range": [
+            0.7,
+            0.8
+          ],
+          "findings": 7,
+          "correct": 5,
+          "empirical": 0.714,
+          "mean_conf": 0.7
+        },
+        {
+          "range": [
+            0.8,
+            0.9
+          ],
+          "findings": 0,
+          "correct": 0,
+          "empirical": 0.0,
+          "mean_conf": 0.0
+        },
+        {
+          "range": [
+            0.9,
+            1.0
+          ],
+          "findings": 76,
+          "correct": 69,
+          "empirical": 0.908,
+          "mean_conf": 0.976
+        }
+      ]
+    }
+  },
+  "gates": {
+    "recall_ge_0_80": true,
+    "fp_le_0_20": true,
+    "traceability_eq_1": true,
+    "calibration_demonstrated": true
+  },
+  "totals": {
+    "findings_emitted": 83,
+    "labels": 13,
+    "expected_missing": 43,
+    "false_positives": 9
+  },
+  "packages_detail": [
+    {
+      "id": "pkg_weak_ac2",
+      "artifacts": [
+        "syn_01_weak_ac2.md"
+      ],
+      "labels_total": 2,
+      "findings_emitted": 10,
+      "labels_matched": 2,
+      "expected_missing": [
+        "CM-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ],
+      "emitted_missing": [
+        "CM-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ]
+    },
+    {
+      "id": "pkg_good_full",
+      "artifacts": [
+        "syn_02_good_full.md"
+      ],
+      "labels_total": 0,
+      "findings_emitted": 4,
+      "labels_matched": 0,
+      "expected_missing": [],
+      "emitted_missing": []
+    },
+    {
+      "id": "pkg_arch_conflict",
+      "artifacts": [
+        "syn_07_minimal_only_ac2.md",
+        "syn_11_arch_freq_conflict.md"
+      ],
+      "labels_total": 1,
+      "findings_emitted": 7,
+      "labels_matched": 1,
+      "expected_missing": [
+        "AU-2",
+        "CM-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ],
+      "emitted_missing": [
+        "AU-2",
+        "CM-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ]
+    },
+    {
+      "id": "pkg_odp_placeholders",
+      "artifacts": [
+        "syn_04_odp_placeholders.md"
+      ],
+      "labels_total": 2,
+      "findings_emitted": 9,
+      "labels_matched": 2,
+      "expected_missing": [
+        "AC-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ],
+      "emitted_missing": [
+        "AC-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ]
+    },
+    {
+      "id": "pkg_partial_au2",
+      "artifacts": [
+        "syn_05_partial_au2.md"
+      ],
+      "labels_total": 1,
+      "findings_emitted": 7,
+      "labels_matched": 1,
+      "expected_missing": [
+        "CM-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ],
+      "emitted_missing": [
+        "CM-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ]
+    },
+    {
+      "id": "pkg_doc_boundary",
+      "artifacts": [
+        "syn_06_doc_boundary.md"
+      ],
+      "labels_total": 1,
+      "findings_emitted": 5,
+      "labels_matched": 0,
+      "expected_missing": [
+        "AC-2",
+        "AU-2",
+        "CM-2",
+        "SI-4"
+      ],
+      "emitted_missing": [
+        "AC-2",
+        "AU-2",
+        "CM-2",
+        "SI-4"
+      ]
+    },
+    {
+      "id": "pkg_generic_ac2",
+      "artifacts": [
+        "syn_08_generic_ac2.md"
+      ],
+      "labels_total": 2,
+      "findings_emitted": 9,
+      "labels_matched": 2,
+      "expected_missing": [
+        "AU-2",
+        "CM-2",
+        "SC-7",
+        "SI-4"
+      ],
+      "emitted_missing": [
+        "AU-2",
+        "CM-2",
+        "SC-7",
+        "SI-4"
+      ]
+    },
+    {
+      "id": "pkg_oscal_weak",
+      "artifacts": [
+        "syn_10_oscal_weak.json"
+      ],
+      "labels_total": 2,
+      "findings_emitted": 10,
+      "labels_matched": 2,
+      "expected_missing": [
+        "CM-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ],
+      "emitted_missing": [
+        "CM-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ]
+    },
+    {
+      "id": "pkg_compat_arch",
+      "artifacts": [
+        "syn_02_good_full.md",
+        "syn_09_arch_compat.md"
+      ],
+      "labels_total": 0,
+      "findings_emitted": 4,
+      "labels_matched": 0,
+      "expected_missing": [],
+      "emitted_missing": []
+    },
+    {
+      "id": "pkg_au2_weak",
+      "artifacts": [
+        "syn_13_au2_weak.md"
+      ],
+      "labels_total": 1,
+      "findings_emitted": 7,
+      "labels_matched": 1,
+      "expected_missing": [
+        "AC-2",
+        "CM-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ],
+      "emitted_missing": [
+        "AC-2",
+        "CM-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ]
+    },
+    {
+      "id": "pkg_cm2_minimal",
+      "artifacts": [
+        "syn_14_cm2_minimal.md"
+      ],
+      "labels_total": 1,
+      "findings_emitted": 7,
+      "labels_matched": 1,
+      "expected_missing": [
+        "AC-2",
+        "AU-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ],
+      "emitted_missing": [
+        "AC-2",
+        "AU-2",
+        "IA-2",
+        "SC-7",
+        "SI-4"
+      ]
+    },
+    {
+      "id": "pkg_sc7_si4",
+      "artifacts": [
+        "syn_12_sc7_si4_addressed.md"
+      ],
+      "labels_total": 0,
+      "findings_emitted": 4,
+      "labels_matched": 0,
+      "expected_missing": [
+        "AC-2",
+        "AU-2",
+        "CM-2",
+        "IA-2"
+      ],
+      "emitted_missing": [
+        "AC-2",
+        "AU-2",
+        "CM-2",
+        "IA-2"
+      ]
+    }
+  ],
+  "all_gates_passed": true
+}

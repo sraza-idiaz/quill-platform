@@ -1,0 +1,36 @@
+# QUILL — Python dependencies (pinned). Mirrors AXO's stack.
+# Core API
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# DB (async PostgreSQL) — reuse AXO connection pattern
+asyncpg==0.30.0
+sqlalchemy==2.0.36
+
+# Config / schema
+pyyaml==6.0.2
+jsonschema==4.23.0
+
+# Ingestion parsers
+pypdf==5.1.0           # PDF
+python-docx==1.1.2     # DOCX
+markdown-it-py==3.0.0  # Markdown
+
+# Tier 1 retrieval (local; no cloud) — embeddings added at T-3.1
+# sentence-transformers / faiss-cpu  (deferred to WP-3)
+
+# Tier 2 local LLM client
+ollama==0.4.4
+
+# Auth + signing (QUILL-native; DECISION-002)
+PyJWT==2.10.1
+python-gnupg==0.5.4
+passlib[bcrypt]==1.7.4
+
+# Test / dev
+pytest==8.3.4
+pytest-asyncio==0.25.0
+httpx==0.28.1

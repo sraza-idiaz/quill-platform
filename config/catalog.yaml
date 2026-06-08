@@ -1,0 +1,74 @@
+# QUILL control catalog — NIST SP 800-53 Rev.5 + 800-53A objectives (sample subset).
+# Generic-first / schema-driven (NFR-MNT-01): the engine loads this file; it is NOT hardcoded.
+# In production this is generated from the official OSCAL catalog/profile. This subset is
+# sufficient to exercise Tier 0 (coverage / required-field / consistency / OSCAL) and tests.
+#
+# baseline selection -> FR-CAT-03 (DECISION-006: default moderate)
+version: 1
+source_catalog: nist-800-53-rev5
+assessment_catalog: nist-800-53a-rev5
+baseline: moderate            # low | moderate | high
+
+controls:
+  - control_id: AC-2
+    family: AC
+    title: Account Management
+    baselines: [low, moderate, high]
+    required_fields: [account_types, responsible_role, review_frequency, enforcement_mechanism]
+    objectives:
+      - objective_id: AC-2_obj.a
+        text: "Account types to be managed are defined."
+        required_methods: [examine]
+      - objective_id: AC-2_obj.j
+        text: "Accounts are reviewed for compliance at the organization-defined frequency."
+        required_methods: [examine, interview]
+
+  - control_id: AU-2
+    family: AU
+    title: Event Logging
+    baselines: [low, moderate, high]
+    required_fields: [event_types, review_mechanism]
+    objectives:
+      - objective_id: AU-2_obj.a
+        text: "Event types selected for logging are defined."
+        required_methods: [examine]
+
+  - control_id: IA-2
+    family: IA
+    title: Identification and Authentication (Organizational Users)
+    baselines: [low, moderate, high]
+    required_fields: [authenticator_types, mfa_scope]
+    objectives:
+      - objective_id: IA-2_obj.a
+        text: "Organizational users are uniquely identified and authenticated."
+        required_methods: [examine, test]
+
+  - control_id: CM-2
+    family: CM
+    title: Baseline Configuration
+    baselines: [moderate, high]
+    required_fields: [baseline_reference, change_control]
+    objectives:
+      - objective_id: CM-2_obj.a
+        text: "A current baseline configuration is developed and documented."
+        required_methods: [examine]
+
+  - control_id: SC-7
+    family: SC
+    title: Boundary Protection
+    baselines: [low, moderate, high]
+    required_fields: [boundary_components, monitoring_mechanism]
+    objectives:
+      - objective_id: SC-7_obj.a
+        text: "External system boundaries are monitored and controlled."
+        required_methods: [examine, test]
+
+  - control_id: SI-4
+    family: SI
+    title: System Monitoring
+    baselines: [moderate, high]
+    required_fields: [monitoring_objectives, alerting_mechanism]
+    objectives:
+      - objective_id: SI-4_obj.a
+        text: "The system is monitored to detect attacks and indicators of potential attacks."
+        required_methods: [examine, test]

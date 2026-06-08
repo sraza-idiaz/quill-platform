@@ -1,0 +1,711 @@
+// QUILL UI client — 4 views with sidebar routing, talks to the FastAPI REST API.
+
+const $  = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+
+const state = {
+  artifacts: [],
+  artifactPkg: {},           // artifact_id -> package id (PKG-YYYY-XXXX)
+  runByArtifact: new Map(),  // artifact_id -> latest run object
+  findingsByRun: new Map(),  // run_id -> [findings]
+  currentArtifact: null,
+  currentRunId: null,
+  currentFindingId: null,
+  artifactText: "",
+  audit: [],
+  chainValid: true,
+  health: null,
+};
+
+// ─────────────────────────────────────────── API ──
+function role() { return $("#role").value; }
+async function api(path, opts = {}) {
+  const headers = { "X-QUILL-Role": role(), ...(opts.headers || {}) };
+  if (opts.json !== undefined) {
+    headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(opts.json);
+    delete opts.json;
+  }
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), opts.timeout || 60000);
+  let res;
+  try { res = await fetch(path, { ...opts, headers, signal: controller.signal }); }
+  catch (e) {
+    if (e.name === "AbortError") throw new Error("backend timeout (server unreachable on http://localhost:8000)");
+    throw new Error(`network: ${e.message}`);
+  } finally { clearTimeout(t); }
+  const ct = res.headers.get("content-type") || "";
+  const body = ct.includes("json") ? await res.json() : await res.text();
+  if (!res.ok) throw new Error(`${res.status} · ${(body && body.detail) || body || res.statusText}`);
+  return body;
+}
+
+// ─────────────────────────────────────────── View routing ──
+function switchView(viewId) {
+  $$(".view-frame").forEach(f => f.classList.remove("active"));
+  $$(".nav-link").forEach(l => l.classList.remove("active"));
+  const view = document.getElementById("view-" + viewId);
+  const link = document.getElementById("link-" + viewId);
+  if (view) view.classList.add("active");
+  if (link) link.classList.add("active");
+  if (viewId === "dashboard")   refreshDashboard();
+  if (viewId === "inventory")   renderInventory();
+  if (viewId === "audit")       refreshAudit();
+}
+
+// Sidebar nav handler — extra logic so clicking the Gate when nothing is loaded
+// shows a helpful empty state rather than a confusing blank panel.
+$$(".nav-link").forEach(l => {
+  l.addEventListener("click", () => {
+    const target = l.dataset.view;
+    if (target === "attestation" && !state.currentArtifact) {
+      setGateEmpty();
+      return;
+    }
+    switchView(target);
+  });
+});
+
+// ─────────────────────────────────────────── Health ──
+function showBackendBanner(message) {
+  let bar = document.getElementById("backendBanner");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "backendBanner";
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+  bar.innerHTML = message;
+}
+function hideBackendBanner() {
+  const bar = document.getElementById("backendBanner");
+  if (bar) bar.remove();
+}
+
+async function refreshHealth() {
+  try {
+    const h = await api("/health");
+    state.health = h;
+
+    // Operational mode chip (no more 'demo mode' nag)
+    const airChip = $("#airgapChip");
+    airChip.textContent = h.air_gap ? "Air-Gap" : "Live";
+    airChip.className = "env-chip ok";
+    hideBackendBanner();
+
+    $("#tier2Chip").textContent  = h.tier2_analyzer ? `T2 · ${h.tier2_analyzer}` : "T2 · disabled";
+    $("#tier2Chip").className    = h.tier2_analyzer ? "env-chip ok" : "env-chip";
+    $("#breakerChip").textContent = `breaker ${h.circuit_breaker_threshold}`;
+    $("#engineSummary").innerHTML =
+      `baseline · ${escapeHtml(h.baseline)}<br>controls · ${h.controls_loaded}<br>tier 2 · ${escapeHtml(h.tier2_analyzer || "—")}`;
+    $("#footerEnv").textContent = `${h.air_gap ? "Air-Gap" : "Live"} · baseline ${h.baseline} · ${h.controls_loaded} controls · breaker ${h.circuit_breaker_threshold}`;
+
+    // Dashboard breaker max
+    $("#metric-breaker-max").textContent = h.circuit_breaker_threshold;
+  } catch (e) {
+    $("#airgapChip").textContent = "BACKEND UNREACHABLE";
+    $("#airgapChip").className = "env-chip error";
+    showBackendBanner(
+      `<b>Backend unreachable.</b> Open <a href="http://localhost:8000/ui/">http://localhost:8000/ui/</a> in a regular browser tab. (${escapeHtml(e.message)})`
+    );
+  }
+}
+
+// ─────────────────────────────────────────── Package id derivation ──
+// Deterministic PKG-YYYY-XXXX from artifact hash (no model needed; cosmetic grouping).
+function packageIdFor(a) {
+  if (state.artifactPkg[a.id]) return state.artifactPkg[a.id];
+  const year = new Date().getFullYear();
+  const slug = (a.hash || a.id).slice(0, 6).toUpperCase();
+  const id = `PKG-${year}-${slug}`;
+  state.artifactPkg[a.id] = id;
+  return id;
+}
+
+// ─────────────────────────────────────────── Artifacts (data layer) ──
+async function loadArtifacts() {
+  try { state.artifacts = await api("/artifacts"); }
+  catch { state.artifacts = []; }
+  // Make sure pkg ids are computed
+  state.artifacts.forEach(packageIdFor);
+}
+
+// ─────────────────────────────────────────── INVENTORY VIEW ──
+async function renderInventory() {
+  await loadArtifacts();
+  const tbody = $("#inventoryTable tbody"); tbody.innerHTML = "";
+  $("#inventoryEmpty").hidden = state.artifacts.length > 0;
+
+  for (const a of state.artifacts.slice().reverse()) {
+    const tr = document.createElement("tr");
+    const status = inferArtifactStatus(a);
+    tr.innerHTML = `
+      <td><code>${escapeHtml(packageIdFor(a))}</code></td>
+      <td>${escapeHtml(a.filename)}</td>
+      <td class="muted">NIST SP 800-53 Rev. 5 · ${escapeHtml(state.health?.baseline || "—")} Baseline</td>
+      <td><span class="vstatus ${status.cls}">${status.label}</span></td>
+      <td class="col-action">
+        <div class="inv-actions">
+          <button class="btn-small btn-ghost" data-act="analyze" data-id="${a.id}">Analyze</button>
+          <button class="btn-small"           data-act="gate"    data-id="${a.id}">Open Gate</button>
+        </div>
+      </td>`;
+    tr.querySelector('[data-act="analyze"]').onclick = (e) => { e.stopPropagation(); analyzeArtifact(a.id); };
+    tr.querySelector('[data-act="gate"]').onclick    = (e) => { e.stopPropagation(); openGateFor(a.id); };
+    tbody.appendChild(tr);
+  }
+}
+
+function inferArtifactStatus(a) {
+  const run = state.runByArtifact.get(a.id);
+  if (!run) return { cls: "ingested", label: "Ingested" };
+  if (run.status === "analyzing") return { cls: "processing", label: "Processing" };
+  const fs = state.findingsByRun.get(run.id) || [];
+  if (!fs.length) return { cls: "auto-passed", label: "Auto-Passed" };
+  const unattested = fs.filter(f => f.status === "unattested").length;
+  if (unattested === 0) return { cls: "fully-attested", label: "Fully Attested" };
+  return { cls: "pending-gate", label: `Pending Gate · ${unattested}` };
+}
+
+// ─────────────────────────────────────────── Upload ──
+$("#fileInput").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  $("#fileLabel").textContent = f ? f.name : "PDF · DOCX · MD · OSCAL JSON";
+});
+
+$("#uploadForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = $("#fileInput").files[0];
+  if (!f) return;
+  const fd = new FormData(); fd.append("file", f);
+  const btn = $("#uploadForm button[type=submit]");
+  const orig = btn.textContent;
+  btn.textContent = "Ingesting…"; btn.disabled = true;
+  try {
+    const res = await fetch("/artifacts", {
+      method: "POST", body: fd, headers: { "X-QUILL-Role": role() },
+    });
+    if (!res.ok) throw new Error(`${res.status} · ${await res.text()}`);
+    const a = await res.json();
+    $("#fileInput").value = "";
+    $("#fileLabel").textContent = "PDF · DOCX · MD · OSCAL JSON";
+    await renderInventory();
+    refreshDashboard();
+    // Open the Attestation Gate immediately on the freshly uploaded artifact
+    // (this is what users actually want after upload).
+    openGateFor(a.id);
+  } catch (err) {
+    alert("Upload failed: " + err.message);
+  } finally { btn.textContent = orig; btn.disabled = false; }
+});
+
+// ─────────────────────────────────────────── Analyze ──
+async function analyzeArtifact(artifactId) {
+  try {
+    const run = await api(`/artifacts/${artifactId}/runs`, { method: "POST", timeout: 120000 });
+    state.runByArtifact.set(artifactId, run);
+    const findings = await api(`/runs/${run.id}/findings`);
+    state.findingsByRun.set(run.id, findings);
+    await renderInventory();
+    refreshDashboard();
+    updateAlertBadge();
+  } catch (e) {
+    alert("Analysis failed: " + e.message);
+  }
+}
+
+// ─────────────────────────────────────────── ATTESTATION GATE ──
+function setGateBusy(message) {
+  // Switches to the gate view immediately and shows a visible loading state
+  // in both panes so the user always knows what is happening.
+  switchView("attestation");
+  $("#sourceMeta").textContent = "loading…";
+  $("#findingsMeta").textContent = "—";
+  $("#sourceCanvas").innerHTML =
+    `<div class="gate-loading">
+       <div class="gate-loading-title">${escapeHtml(message)}</div>
+       <div class="gate-loading-sub">Tier 0 → Tier 1 → Tier 2 ` +
+         `${state.health?.tier2_analyzer ? "(" + escapeHtml(state.health.tier2_analyzer) + ")" : ""}.
+       This can take 10–60 seconds with cloud-backed models.</div>
+     </div>`;
+  $("#findingsList").innerHTML = "";
+  $("#findingsEmpty").hidden = true;
+  hideAttestFooter();
+}
+
+function setGateError(message) {
+  $("#sourceCanvas").innerHTML =
+    `<div class="gate-loading">
+       <div class="gate-loading-title" style="color: var(--status-error);">Analysis failed</div>
+       <div class="gate-loading-sub">${escapeHtml(message)}</div>
+     </div>`;
+}
+
+function setGateEmpty() {
+  switchView("attestation");
+  state.currentArtifact = null; state.currentRunId = null;
+  $("#gateContext").textContent = "Select an artifact from the Inventory to open the gate.";
+  $("#gateActions").hidden = true;
+  $("#sourceMeta").textContent = "—";
+  $("#findingsMeta").textContent = "—";
+  $("#sourceCanvas").innerHTML = `
+    <div class="gate-loading">
+      <div class="gate-loading-title">No artifact loaded</div>
+      <div class="gate-loading-sub">
+        Pick an artifact from the inventory and click <b>Open Gate</b>,
+        or upload a new one.
+      </div>
+      <div style="margin-top: var(--space-4);">
+        <button class="btn-ghost btn-small" id="goToInventoryBtn">Go to Artifact Inventory →</button>
+      </div>
+    </div>`;
+  $("#goToInventoryBtn")?.addEventListener?.("click", () => switchView("inventory"));
+  $("#findingsList").innerHTML = "";
+  $("#findingsEmpty").hidden = false;
+  hideAttestFooter();
+}
+
+async function openGateFor(artifactId) {
+  setGateBusy("Loading artifact…");
+
+  // Ensure data is fresh
+  await loadArtifacts();
+  const a = state.artifacts.find(x => x.id === artifactId);
+  if (!a) {
+    setGateError("Artifact not found.");
+    return;
+  }
+
+  state.currentArtifact = a;
+  $("#gateContext").textContent =
+    `Reviewing artifact ${a.filename}  ·  Package ${packageIdFor(a)}  ·  Baseline ${state.health?.baseline || "—"}`;
+
+  // Auto-analyze if no run yet
+  let run = state.runByArtifact.get(a.id);
+  if (!run) {
+    setGateBusy("Running analysis pipeline…");
+    try { run = await api(`/artifacts/${a.id}/runs`, { method: "POST", timeout: 180000 }); }
+    catch (e) { setGateError(e.message); return; }
+    state.runByArtifact.set(a.id, run);
+  }
+  state.currentRunId = run.id;
+  setGateBusy("Loading findings…");
+
+  // Pull text + findings
+  try {
+    const txt = await api(`/artifacts/${a.id}/text`);
+    state.artifactText = txt.text || "";
+  } catch { state.artifactText = ""; }
+  try {
+    state.findingsByRun.set(run.id, await api(`/runs/${run.id}/findings`));
+  } catch (e) { setGateError(e.message); return; }
+
+  renderSourceCanvas();
+  renderFindingsList();
+  $("#findingsMeta").textContent = `${(state.findingsByRun.get(run.id) || []).length} findings`;
+  $("#gateActions").hidden = false;
+  updateAlertBadge();
+}
+
+// Re-analyze + export controls in the gate header
+$("#reanalyzeBtn")?.addEventListener?.("click", async () => {
+  if (!state.currentArtifact) return;
+  const btn = $("#reanalyzeBtn");
+  const orig = btn.textContent; btn.textContent = "Analyzing…"; btn.disabled = true;
+  try {
+    const run = await api(`/artifacts/${state.currentArtifact.id}/runs`, { method: "POST", timeout: 180000 });
+    state.runByArtifact.set(state.currentArtifact.id, run);
+    state.currentRunId = run.id;
+    state.findingsByRun.set(run.id, await api(`/runs/${run.id}/findings`));
+    renderSourceCanvas();
+    renderFindingsList();
+    $("#findingsMeta").textContent = `${(state.findingsByRun.get(run.id) || []).length} findings`;
+    updateAlertBadge();
+    refreshDashboard();
+  } catch (e) { alert("Re-analyze failed: " + e.message); }
+  finally { btn.textContent = orig; btn.disabled = false; }
+});
+
+$("#exportReportBtn")?.addEventListener?.("click", () => doExport("report"));
+$("#exportPoamBtn")  ?.addEventListener?.("click", () => doExport("poam"));
+$("#exportAuditBtn") ?.addEventListener?.("click", () => doExport("audit"));
+
+async function doExport(fmt) {
+  if (!state.currentRunId) { alert("Open an analyzed artifact first."); return; }
+  try {
+    const ex = await api(`/runs/${state.currentRunId}/export`, { method: "POST", json: { format: fmt }, timeout: 60000 });
+    const isJson = fmt !== "report";
+    const blob = new Blob([ex.content], { type: isJson ? "application/json" : "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `quill-${fmt}-${state.currentRunId}.${isJson ? "json" : "md"}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) { alert("Export failed: " + e.message); }
+}
+
+// ─── 50/50 LEFT: Source canvas with inline dashed-underline target spans ───
+function renderSourceCanvas() {
+  const canvas = $("#sourceCanvas");
+  const text = state.artifactText || "";
+  const findings = (state.findingsByRun.get(state.currentRunId) || []);
+  $("#sourceMeta").textContent = state.currentArtifact ? state.currentArtifact.filename : "—";
+
+  if (!text) {
+    canvas.innerHTML = `<em class="canvas-placeholder">Artifact text unavailable for this run.</em>`;
+    return;
+  }
+
+  // Build merged span list (artifact-quote findings only — catalog refs render differently)
+  const spans = [];
+  for (const f of findings) {
+    for (const s of (f.evidence_spans || [])) {
+      if (s.artifact_id.startsWith("catalog:")) continue;
+      const q = (s.quoted_text || "").trim();
+      if (!q) continue;
+      const idx = text.indexOf(q);
+      if (idx >= 0) spans.push({ start: idx, end: idx + q.length, finding: f });
+    }
+  }
+  spans.sort((a, b) => a.start - b.start || b.end - a.end);
+
+  // De-overlap (keep the earliest, drop overlapping later ones for clean rendering)
+  const placed = [];
+  for (const s of spans) {
+    const last = placed[placed.length - 1];
+    if (last && s.start < last.end) continue;
+    placed.push(s);
+  }
+
+  // Render: markdown headings to HTML, paragraphs to <p>, and spans as <span class="target-span" data-finding="...">
+  // Use a simple approach: build the inline string with placeholders, then run lightweight md-to-html on the surrounding text only.
+  let pieces = [];
+  let cursor = 0;
+  for (const s of placed) {
+    pieces.push({ kind: "text", value: text.slice(cursor, s.start) });
+    pieces.push({ kind: "span", value: text.slice(s.start, s.end), finding: s.finding });
+    cursor = s.end;
+  }
+  pieces.push({ kind: "text", value: text.slice(cursor) });
+
+  // Lightweight markdown: # / ## / ### headings, blank-line-separated paragraphs.
+  const html = pieces.map(p => {
+    if (p.kind === "span") {
+      const sev = severityClass(p.finding.severity);
+      return `<span class="target-span ${sev}" data-finding="${escapeHtml(p.finding.id)}">${escapeHtml(p.value)}</span>`;
+    }
+    return mdToHtml(p.value);
+  }).join("");
+
+  canvas.innerHTML = html;
+  canvas.querySelectorAll(".target-span").forEach(el => {
+    el.addEventListener("click", () => selectFinding(el.dataset.finding, { fromSpan: true }));
+  });
+}
+
+function mdToHtml(s) {
+  // Very small renderer. Escapes everything, then promotes headings + paragraphs.
+  if (!s) return "";
+  return s
+    .split(/\n{2,}/)
+    .map(block => {
+      const trimmed = block.replace(/^\n+|\n+$/g, "");
+      if (!trimmed) return "";
+      const h = /^(#{1,3})\s+(.*)$/.exec(trimmed);
+      if (h) return `<h${h[1].length}>${escapeHtml(h[2])}</h${h[1].length}>`;
+      return `<p>${escapeHtml(trimmed).replace(/\n/g, "<br>")}</p>`;
+    })
+    .join("");
+}
+
+// ─── 50/50 RIGHT: finding cards ───
+function renderFindingsList() {
+  const findings = state.findingsByRun.get(state.currentRunId) || [];
+  const list = $("#findingsList"); list.innerHTML = "";
+  $("#findingsEmpty").hidden = findings.length > 0;
+
+  findings.forEach(f => list.appendChild(renderFindingCard(f)));
+  // Default-select first unattested
+  const next = findings.find(f => f.status === "unattested") || findings[0];
+  if (next) selectFinding(next.id);
+  else hideAttestFooter();
+}
+
+function renderFindingCard(f) {
+  const card = document.createElement("article");
+  const sev = severityClass(f.severity);
+  card.className = `finding-card ${sev}`;
+  card.dataset.finding = f.id;
+  if (f.id === state.currentFindingId) card.classList.add("active");
+
+  const conf = Math.round((f.confidence || 0) * 100);
+  const span = (f.evidence_spans || []).find(s => !s.artifact_id.startsWith("catalog:"))
+            || (f.evidence_spans || [])[0];
+
+  const citation = !span ? ""
+    : span.artifact_id.startsWith("catalog:")
+      ? `<blockquote class="fc-citation">${escapeHtml(span.quoted_text)}<span class="source-ref">↳ catalog · ${escapeHtml(span.locator)}</span></blockquote>`
+      : `<blockquote class="fc-citation">"${escapeHtml(span.quoted_text)}"<span class="source-ref">↳ ${escapeHtml(span.artifact_id)} · ${escapeHtml(span.locator)}</span></blockquote>`;
+
+  card.innerHTML = `
+    <div class="fc-head">
+      <span class="fc-ctrl">NIST ${escapeHtml(f.control_id)}</span>
+      <span class="fc-deficit ${sev}">${deficitLabel(f.severity)}</span>
+    </div>
+    <div class="fc-title">${escapeHtml(findingTitle(f))}</div>
+    <div class="fc-description">${escapeHtml(f.rationale || f.recommendation)}</div>
+    ${citation}
+    <div class="fc-meta">
+      <span class="calibration">${conf}% Calibration Confidence</span>
+      <span>tier ${escapeHtml(f.tier)}</span>
+      <span class="status-tag ${escapeHtml(f.status)}">${escapeHtml(f.status.replace(/_/g, " "))}</span>
+    </div>`;
+  card.addEventListener("click", () => selectFinding(f.id));
+  return card;
+}
+
+function selectFinding(id, { fromSpan = false } = {}) {
+  state.currentFindingId = id;
+  $$(".finding-card").forEach(c => c.classList.toggle("active", c.dataset.finding === id));
+  $$(".target-span").forEach(s => s.classList.toggle("active", s.dataset.finding === id));
+  const f = (state.findingsByRun.get(state.currentRunId) || []).find(x => x.id === id);
+  if (!f) return hideAttestFooter();
+  // Bring the card or span into view
+  if (fromSpan) {
+    const card = document.querySelector(`.finding-card[data-finding="${cssEsc(id)}"]`);
+    if (card) card.scrollIntoView({ block: "center", behavior: "smooth" });
+  } else {
+    const span = document.querySelector(`.target-span[data-finding="${cssEsc(id)}"]`);
+    if (span) span.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  showAttestFooter(f);
+}
+
+// ─── Attestation footer / cryptographic seal ───
+function showAttestFooter(f) {
+  const footer = $("#attestFooter");
+  $("#attestTarget").textContent = `${f.control_id} · ${f.id}`;
+  const terminal = ["approved", "edited", "rejected"].includes(f.status);
+  const controls = $("#gate-interactive-controls");
+  const seal = $("#gate-signoff-success");
+  const note = $("#attestNote");
+  if (terminal) {
+    controls.style.display = "none";
+    seal.hidden = false;
+    seal.innerHTML = renderInlineSealForExistingFinding(f);
+  } else {
+    controls.style.display = "grid";
+    seal.hidden = true;
+    note.value = "";
+    note.disabled = false;
+    $("#approveBtn").onclick = () => doAttest(f, "approved");
+    $("#editBtn").onclick    = () => {
+      const newRec = prompt("Edit the recommendation (leave blank to keep original):", f.recommendation);
+      const edited = {};
+      if (newRec && newRec !== f.recommendation) edited.recommendation = newRec;
+      doAttest(f, "edited", edited);
+    };
+    $("#rejectBtn").onclick  = () => doAttest(f, "rejected");
+  }
+  footer.hidden = false;
+}
+function hideAttestFooter() { $("#attestFooter").hidden = true; }
+
+async function doAttest(f, decision, edited = null) {
+  if (role() !== "attester") {
+    showSealMessage(`The "Attester" role is required. Switch the Operator at the top right. Admin is NOT auto-granted.`, true);
+    return;
+  }
+  try {
+    const payload = { decision, note: $("#attestNote").value || "" };
+    if (decision === "edited") payload.edited_fields = edited || {};
+    const resp = await api(`/findings/${f.id}/attest`, { method: "POST", json: payload });
+
+    // Cryptographic seal — replaces the controls
+    $("#gate-interactive-controls").style.display = "none";
+    const seal = $("#gate-signoff-success");
+    seal.hidden = false;
+    seal.innerHTML = renderSealHtml({
+      decision,
+      target: `${f.control_id} · ${f.id}`,
+      provenance: resp.provenance_id,
+      scheme: resp.signature_scheme,
+      keyId: resp.signature_key_id,
+      signer: role(),
+      signedAt: resp.signed_at,
+    });
+
+    // Refresh data
+    state.findingsByRun.set(state.currentRunId, await api(`/runs/${state.currentRunId}/findings`));
+    updateAlertBadge();
+    renderFindingsList(); // re-render with new status (without selecting it back, to keep seal visible)
+    refreshDashboard();
+  } catch (e) {
+    showSealMessage("Attestation failed: " + e.message, true);
+  }
+}
+
+function renderSealHtml(o) {
+  return `
+    <div class="seal-banner">Cryptographic Ledger Seal</div>
+    <div class="seal-row"><span class="seal-key">decision</span><span class="seal-val">${escapeHtml(o.decision.toUpperCase())}</span></div>
+    <div class="seal-row"><span class="seal-key">target</span><span class="seal-val">${escapeHtml(o.target)}</span></div>
+    <div class="seal-row"><span class="seal-key">provenance</span><span class="seal-val">${escapeHtml(o.provenance)}</span></div>
+    <div class="seal-row"><span class="seal-key">hash</span><span class="seal-val">sha256_${escapeHtml((o.provenance || "").replace(/^pr-/, ""))}</span></div>
+    <div class="seal-row"><span class="seal-key">scheme</span><span class="seal-val">${escapeHtml(o.scheme)}</span></div>
+    <div class="seal-row"><span class="seal-key">key id</span><span class="seal-val">${escapeHtml(o.keyId)}</span></div>
+    <div class="seal-row"><span class="seal-key">attester</span><span class="seal-val">${escapeHtml(o.signer)}</span></div>
+    <div class="seal-row"><span class="seal-key">signed at</span><span class="seal-val">${escapeHtml(o.signedAt)}</span></div>
+    <div class="seal-armored">Verified · open-cryptographic digital signature present</div>`;
+}
+
+function renderInlineSealForExistingFinding(f) {
+  return `
+    <div class="seal-banner">Finding Already Adjudicated</div>
+    <div class="seal-row"><span class="seal-key">decision</span><span class="seal-val">${escapeHtml(f.status.toUpperCase())}</span></div>
+    <div class="seal-row"><span class="seal-key">target</span><span class="seal-val">${escapeHtml(f.control_id)} · ${escapeHtml(f.id)}</span></div>
+    <div class="seal-armored">No further attestation accepted (FR-ATT-01)</div>`;
+}
+function showSealMessage(msg, isError) {
+  const seal = $("#gate-signoff-success");
+  seal.hidden = false;
+  seal.innerHTML = `<div class="seal-banner" style="${isError ? "color:var(--status-error);" : ""}">${escapeHtml(msg)}</div>`;
+}
+
+// ─────────────────────────────────────────── Audit ──
+async function refreshAudit() {
+  try { state.audit = await api("/audit"); }
+  catch { state.audit = []; }
+  try {
+    const v = await api("/audit/verify");
+    state.chainValid = !!v.chain_valid;
+  } catch { state.chainValid = false; }
+
+  const tbody = $("#auditTable tbody"); tbody.innerHTML = "";
+  $("#auditEmpty").hidden = state.audit.length > 0;
+
+  for (const e of state.audit.slice().reverse()) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><code>${escapeHtml((e.event_hash || "").slice(0, 12))}…</code></td>
+      <td class="muted">${escapeHtml(formatTs(e.at))}</td>
+      <td><code>${escapeHtml(e.target_id || "")}</code></td>
+      <td>${escapeHtml(prettyAction(e.action, e.metadata))}</td>
+      <td><span class="vstatus valid">VALID SIGNATURE PRESENT</span></td>`;
+    tbody.appendChild(tr);
+  }
+  const cs = $("#chainState");
+  cs.textContent = state.chainValid ? `chain valid · ${state.audit.length} blocks` : "CHAIN BROKEN";
+  cs.className = state.chainValid ? "chain-state" : "chain-state broken";
+}
+
+function prettyAction(action, meta) {
+  meta = meta || {};
+  if (action === "artifact.ingested") return `Ingested artifact${meta.filename ? " · " + meta.filename : ""}`;
+  if (action?.startsWith("run."))     return `Run ${action.slice(4)} · tiers ${(meta.tier_path||[]).join(" → ")}`;
+  if (action === "finding.approved")  return `Approved Finding [${meta.control_id || ""}]`;
+  if (action === "finding.rejected")  return `Rejected Finding [${meta.control_id || ""}]`;
+  if (action === "finding.edited")    return `Edited Finding [${meta.control_id || ""}]`;
+  if (action?.startsWith("export."))  return `Exported ${action.slice(7).toUpperCase()}`;
+  return action;
+}
+
+function formatTs(iso) {
+  if (!iso) return "—";
+  try { return new Date(iso).toISOString().replace("T", " ").slice(0, 19) + " Z"; }
+  catch { return iso; }
+}
+
+// ─────────────────────────────────────────── Dashboard ──
+async function refreshDashboard() {
+  await loadArtifacts();
+  // Make sure findings are loaded for every artifact that has a run
+  for (const a of state.artifacts) {
+    const run = state.runByArtifact.get(a.id);
+    if (run && !state.findingsByRun.has(run.id)) {
+      try { state.findingsByRun.set(run.id, await api(`/runs/${run.id}/findings`)); } catch { /* */ }
+    }
+  }
+
+  $("#metric-artifacts").textContent = state.artifacts.length;
+  const packages = new Set(state.artifacts.map(packageIdFor));
+  $("#metric-packages").textContent = packages.size;
+
+  const allFindings = [...state.findingsByRun.values()].flat();
+  const unattested = allFindings.filter(f => f.status === "unattested").length;
+  $("#metric-unattested").textContent = unattested;
+  $("#tile-unattested").classList.toggle("danger", unattested > 0);
+
+  const total = allFindings.length;
+  // "Pass rate" = controls in baseline that produced no findings / controls in baseline
+  // Approximate via: 1 - (missing-controls / baseline-controls)
+  const missing = allFindings.filter(f => f.type === "missing").length;
+  const baselineSize = state.health?.controls_loaded || 0;
+  const rate = baselineSize ? Math.round(((baselineSize - missing) / baselineSize) * 100) : 100;
+  $("#metric-pass-rate").textContent = `${Math.max(0, Math.min(100, rate))}%`;
+
+  // Breaker strike count — currently we only know the threshold. Show "0" unless tripped on any run.
+  const tripped = [...state.runByArtifact.values()].some(r => r.circuit_breaker_tripped);
+  $("#metric-breaker").textContent = tripped ? state.health?.circuit_breaker_threshold || "—" : "0";
+
+  // Recent activity
+  await refreshAudit();
+  const tbody = $("#dashRecent tbody"); tbody.innerHTML = "";
+  const recent = state.audit.slice().reverse().slice(0, 10);
+  $("#dashRecentEmpty").hidden = recent.length > 0;
+  for (const e of recent) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="muted">${escapeHtml(formatTs(e.at))}</td>
+      <td><code>${escapeHtml(e.actor || "system")}</code></td>
+      <td>${escapeHtml(prettyAction(e.action, e.metadata))}</td>
+      <td><code>${escapeHtml(e.target_id || "")}</code></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function updateAlertBadge() {
+  const allFindings = [...state.findingsByRun.values()].flat();
+  const unattested = allFindings.filter(f => f.status === "unattested").length;
+  const badge = $("#sidebar-alert-count");
+  if (unattested > 0) {
+    badge.hidden = false; badge.textContent = unattested;
+  } else {
+    badge.hidden = true;
+  }
+}
+
+// ─────────────────────────────────────────── helpers ──
+function severityClass(sev) {
+  return "sev-" + (sev || "low");
+}
+function deficitLabel(sev) {
+  const map = { critical: "Critical Deficit", high: "High Deficit", medium: "Medium Deficit", low: "Low Deficit" };
+  return map[sev] || (sev || "—").toUpperCase();
+}
+function findingTitle(f) {
+  const t = f.type;
+  if (t === "missing")
+    return "Finding: Control Implementation Missing";
+  if (t === "inconsistent")
+    return "Finding: Cross-Artifact Inconsistency Detected";
+  if (t === "weak_narrative")
+    return "Finding: Narrative Weak / Mimics Control Language";
+  if (t === "insufficient_evidence")
+    return "Finding: Narrative Present but Evidence is Insufficient";
+  if (t === "narrative_present_evidence_unclear")
+    return "Finding: Narrative Present but Evidence is Unclear";
+  return "Finding: " + (t || "").replace(/_/g, " ");
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;").replaceAll("'","&#39;");
+}
+function cssEsc(s) { return (s || "").replace(/(["\\])/g, "\\$1"); }
+
+// ─────────────────────────────────────────── init ──
+$("#role").addEventListener("change", () => { refreshHealth(); });
+refreshHealth().then(refreshDashboard);
+setInterval(refreshHealth, 30000);

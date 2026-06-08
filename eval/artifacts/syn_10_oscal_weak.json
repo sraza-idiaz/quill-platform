@@ -1,0 +1,35 @@
+{
+  "system-security-plan": {
+    "uuid": "aaaaaaaa-0000-4000-8000-000000000001",
+    "metadata": { "title": "Synthetic OSCAL — weak narratives", "version": "0.1" },
+    "control-implementation": {
+      "description": "Weak / generic implementation statements.",
+      "implemented-requirements": [
+        {
+          "uuid": "bbbbbbbb-0000-4000-8000-000000000001",
+          "control-id": "ac-2",
+          "statements": [
+            { "statement-id": "ac-2_smt",
+              "by-components": [
+                { "component-uuid": "cccccccc-0000-4000-8000-000000000001",
+                  "description": "Accounts are managed at an organization-defined frequency." }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "bbbbbbbb-0000-4000-8000-000000000002",
+          "control-id": "au-2",
+          "statements": [
+            { "statement-id": "au-2_smt",
+              "by-components": [
+                { "component-uuid": "cccccccc-0000-4000-8000-000000000001",
+                  "description": "The system performs event logging in accordance with policy." }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

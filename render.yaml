@@ -1,0 +1,31 @@
+# Render blueprint for the QUILL service.
+# Renders an HTTP web service that serves the FastAPI app + the static UI at /ui/.
+# Tier 2 (Ollama) is intentionally disabled on Render — there is no ollama daemon in
+# the cloud build. The engine gracefully degrades to Tier 0 + Tier 1 (FR-RES-01).
+
+services:
+  - type: web
+    name: quill
+    runtime: python
+    plan: free
+    autoDeploy: true
+    branch: main
+
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --log-level info
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: QUILL_DEV_MODE
+        # Header-based auth (X-QUILL-Role) for the public demo so reviewers can switch
+        # roles without provisioning JWTs. For real deployments, flip to 0 and set
+        # QUILL_JWT_SECRET. Auth and the attestation gate behave identically either way.
+        value: "1"
+      - key: QUILL_AIR_GAP
+        value: "1"
+      - key: QUILL_ENABLE_TIER2_AT_STARTUP
+        # No ollama daemon in cloud; orchestrator runs T0 + T1 only.
+        value: "0"
+
+    healthCheckPath: /health

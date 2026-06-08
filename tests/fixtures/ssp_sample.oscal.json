@@ -1,0 +1,41 @@
+{
+  "system-security-plan": {
+    "uuid": "11111111-0000-4000-8000-000000000000",
+    "metadata": { "title": "Sample SSP", "version": "0.1" },
+    "control-implementation": {
+      "description": "Control implementations",
+      "implemented-requirements": [
+        {
+          "uuid": "22222222-0000-4000-8000-000000000000",
+          "control-id": "ac-2",
+          "statements": [
+            {
+              "statement-id": "ac-2_smt",
+              "by-components": [
+                {
+                  "component-uuid": "33333333-0000-4000-8000-000000000000",
+                  "description": "Accounts are managed at an organization-defined frequency."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "44444444-0000-4000-8000-000000000000",
+          "control-id": "au-2",
+          "statements": [
+            {
+              "statement-id": "au-2_smt",
+              "by-components": [
+                {
+                  "component-uuid": "33333333-0000-4000-8000-000000000000",
+                  "description": "The system logs authentication events and configuration changes; logs retained 365 days; SIEM review mechanism alerts the team."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Logs / local runtime
+*.log
+/tmp/
+.coverage
+htmlcov/
+
+# Secrets — never commit
+.env
+.env.*
+*.pem
+*.key
+quill_local.db
+
+# Eval outputs — keep the latest report only
+eval/reports/eval-*.json
+eval/reports/eval-*.md

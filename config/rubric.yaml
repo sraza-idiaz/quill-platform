@@ -1,0 +1,90 @@
+# QUILL evidence-sufficiency rubric (docs/03 §7). Schema-driven; no code change to edit.
+version: 1
+catalog: nist-800-53-rev5
+assessment_catalog: nist-800-53a-rev5
+baseline: moderate
+
+# Universal sufficiency criteria (docs/03 §3.1)
+sufficiency_criteria:
+  - code: C1
+    name: Specificity
+    applies_to: all
+    check: llm
+    guidance: "Reject generic restatements of the control text; require concrete actor/system/mechanism."
+  - code: C2
+    name: Completeness
+    applies_to: all
+    check: hybrid
+    guidance: "All parameters the determination statement requires (who/what/where/how) are addressed."
+  - code: C3
+    name: ODP values present
+    applies_to: all
+    check: deterministic
+    guidance: "Flag any unfilled organization-defined parameter, e.g. '[Assignment: ...]' or 'organization-defined frequency'."
+  - code: C4
+    name: Mechanism/enforcement
+    applies_to: all
+    check: llm
+    guidance: "Describes how the control is implemented/enforced, not merely intended ('we plan to')."
+  - code: C5
+    name: Internal consistency
+    applies_to: all
+    check: hybrid
+    guidance: "No self-contradiction or conflict with other statements for the same control."
+  - code: C6
+    name: Verifiable from docs
+    applies_to: all
+    check: llm
+    guidance: "Confirmable via the examine method; if it requires interview/test, score not_determinable_from_docs."
+
+# Family-specific required criteria + elements (docs/03 §3.2)
+family_rules:
+  AC:
+    required_criteria: [C1, C2, C3, C4, C6]
+    required_elements: [account_types, responsible_role, review_frequency]
+  AU:
+    required_criteria: [C1, C2, C3, C4]
+    required_elements: [event_types, retention_period, review_mechanism]
+  IA:
+    required_criteria: [C1, C2, C4, C6]
+    required_elements: [authenticator_types, mfa_scope]
+  CM:
+    required_criteria: [C1, C2, C4]
+    required_elements: [baseline_reference, change_control]
+  SC:
+    required_criteria: [C1, C2, C4, C6]
+    required_elements: [boundary_components, monitoring_mechanism]
+  SI:
+    required_criteria: [C1, C2, C4, C6]
+    required_elements: [monitoring_objectives, alerting_mechanism]
+
+severity_model:                 # docs/03 §5.1
+  factors: [control_importance, finding_type, baseline_membership]
+  high_impact_families: [AC, AU, IA, SC, SI]
+  type_rank:                    # higher = more severe
+    missing: 4
+    inconsistent: 4
+    insufficient_evidence: 3
+    weak_narrative: 2
+    narrative_present_evidence_unclear: 2
+
+confidence_thresholds:          # docs/03 §5.2 (tune at eval T-6.2)
+  emit: 0.75
+  needs_review: 0.50
+  defer_below: 0.50
+
+circuit_breaker:
+  threshold: 3                  # NOT 999 (FR-CONF-02 / DECISION-004)
+
+documentation_boundary:         # docs/03 §3.3
+  not_determinable_methods: [interview, test]
+
+# Deterministic signals for unfilled ODPs (used by Tier 0 C3 check)
+odp_unfilled_patterns:
+  - "[Assignment:"
+  - "[Selection:"
+  - "organization-defined"
+  - "org-defined"
+  - "TBD"
+  - "to be determined"
+  - "<placeholder>"

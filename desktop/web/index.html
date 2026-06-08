@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en" data-theme="charcoal">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>QUILL — RMF Pre-Adjudication Terminal</title>
+<link rel="stylesheet" href="./styles.css?v=14" />
+</head>
+<body>
+
+<!-- ─── 1. SYSTEM BASE LAYER ─── -->
+<header class="topbar">
+  <div class="brand">
+    <div class="mark" aria-hidden="true">
+      <span></span><span class="on"></span><span class="on"></span><span></span>
+      <span class="on"></span><span></span><span></span><span class="on"></span>
+      <span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span>
+      <span></span><span class="on"></span><span class="on"></span><span></span>
+    </div>
+    <div class="brand-text">
+      <h1>QUILL</h1>
+      <p class="tagline">AI-Assisted RMF Pre-Adjudication Terminal · MERP</p>
+    </div>
+  </div>
+  <div class="env-bar">
+    <div class="env-chip" id="cmmcChip">CMMC L2 (Self)</div>
+    <div class="env-chip" id="itarChip">ITAR / EAR</div>
+    <div class="env-chip" id="airgapChip">checking…</div>
+    <div class="env-chip" id="tier2Chip">—</div>
+    <div class="env-chip" id="breakerChip">breaker —</div>
+    <div class="role-picker">
+      <span class="role-label">Operator</span>
+      <select id="role" aria-label="acting role">
+        <option value="engineer">Engineer</option>
+        <option value="attester">Attester</option>
+        <option value="viewer">Viewer</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ─── Sidebar nav (4 views) ─── -->
+  <aside class="sidebar">
+    <nav class="sidebar-nav">
+      <button class="nav-link active" id="link-dashboard"   data-view="dashboard">
+        <span class="nav-icon">▦</span><span>Dashboard</span>
+      </button>
+      <button class="nav-link" id="link-inventory"          data-view="inventory">
+        <span class="nav-icon">⊞</span><span>Artifact Inventory</span>
+      </button>
+      <button class="nav-link" id="link-attestation"        data-view="attestation">
+        <span class="nav-icon">◈</span><span>Attestation Gate</span>
+        <span class="nav-badge" id="sidebar-alert-count" hidden>0</span>
+      </button>
+      <button class="nav-link" id="link-audit"              data-view="audit">
+        <span class="nav-icon">⛓</span><span>Audit Trail Ledger</span>
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-footer-label">Engine</div>
+      <div class="sidebar-footer-text" id="engineSummary">—</div>
+    </div>
+  </aside>
+
+  <!-- ─── 2. DESKTOP RUNTIME LAYER ─── -->
+  <section class="workspace">
+
+    <!-- ============ VIEW 01: DASHBOARD MATRIX ============ -->
+    <div class="view-frame active" id="view-dashboard">
+      <header class="view-header">
+        <h2>Dashboard Matrix</h2>
+        <p class="view-sub">Global telemetry, posture, and system health for the active run-loop.</p>
+      </header>
+
+      <div class="metric-grid">
+        <article class="metric-tile">
+          <header><span class="tile-glyph">⊞</span>Ingested Artifacts</header>
+          <div class="metric-value" id="metric-artifacts">0</div>
+          <footer>across <span id="metric-packages">0</span> program packages</footer>
+        </article>
+
+        <article class="metric-tile alert" id="tile-unattested">
+          <header><span class="tile-glyph">◈</span>Unattested Findings</header>
+          <div class="metric-value" id="metric-unattested">0</div>
+          <footer>awaiting human adjudication</footer>
+        </article>
+
+        <article class="metric-tile">
+          <header><span class="tile-glyph">✓</span>Deterministic Pass Rate</header>
+          <div class="metric-value" id="metric-pass-rate">—</div>
+          <footer>Tier 0 schema checks passed without AI</footer>
+        </article>
+
+        <article class="metric-tile">
+          <header><span class="tile-glyph">⚠</span>Circuit Breaker</header>
+          <div class="metric-value"><span id="metric-breaker">0</span><span class="breaker-divider"> / </span><span id="metric-breaker-max">3</span></div>
+          <footer>strikes before artifact routes to human review</footer>
+        </article>
+      </div>
+
+      <header class="view-header" style="margin-top: var(--space-lg);">
+        <h2>Run-Loop Recent Activity</h2>
+        <p class="view-sub">Last 10 ledger commits.</p>
+      </header>
+      <div class="data-table-wrapper">
+        <table class="data-table" id="dashRecent">
+          <thead><tr>
+            <th>Time</th><th>Operator</th><th>Action</th><th>Target</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty-row" id="dashRecentEmpty">No recent ledger activity.</div>
+      </div>
+    </div>
+
+    <!-- ============ VIEW 02: ARTIFACT INVENTORY ============ -->
+    <div class="view-frame" id="view-inventory">
+      <header class="view-header">
+        <h2>Artifact Inventory</h2>
+        <p class="view-sub">Central file registry. Each package maps to a target compliance baseline.</p>
+      </header>
+
+      <form id="uploadForm" class="upload-bar">
+        <label class="file-drop">
+          <span class="hint">Click to select an artifact</span>
+          <span class="name" id="fileLabel">PDF · DOCX · MD · OSCAL JSON</span>
+          <input type="file" id="fileInput" accept=".md,.markdown,.txt,.pdf,.docx,.json" required />
+        </label>
+        <button type="submit">Ingest Artifact</button>
+      </form>
+
+      <div class="data-table-wrapper">
+        <table class="data-table" id="inventoryTable">
+          <thead><tr>
+            <th>Package Target ID</th>
+            <th>File Reference</th>
+            <th>Compliance Baseline</th>
+            <th>Verification Status</th>
+            <th class="col-action">Action</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty-row" id="inventoryEmpty">No artifacts in registry.</div>
+      </div>
+    </div>
+
+    <!-- ============ VIEW 03: ATTESTATION GATE ============ -->
+    <div class="view-frame" id="view-attestation">
+      <header class="view-header gate-header">
+        <div>
+          <h2>Attestation Gate</h2>
+          <p class="view-sub" id="gateContext">Select an artifact from the Inventory to open the gate.</p>
+        </div>
+        <div class="gate-actions" id="gateActions" hidden>
+          <button class="btn-ghost btn-small" id="reanalyzeBtn" title="Re-run the analysis pipeline">↻ Re-analyze</button>
+          <button class="btn-ghost btn-small" id="exportReportBtn" title="Signed Markdown report of attested findings">Export · Report</button>
+          <button class="btn-ghost btn-small" id="exportPoamBtn"   title="OSCAL POA&amp;M JSON of attested findings">Export · POA&amp;M</button>
+          <button class="btn-ghost btn-small" id="exportAuditBtn"  title="Integrity-verifiable audit chain artifact">Export · Audit</button>
+        </div>
+      </header>
+
+      <div class="split-pane">
+        <!-- LEFT: Artifact Source Canvas -->
+        <div class="pane source-canvas-pane">
+          <div class="pane-bar">
+            <span class="pane-bar-label">Artifact Source Canvas</span>
+            <span class="pane-bar-meta" id="sourceMeta">—</span>
+          </div>
+          <div class="pane-body source-body">
+            <article id="sourceCanvas" class="source-canvas">
+              <em class="canvas-placeholder">No artifact loaded. Open one from the Artifact Inventory.</em>
+            </article>
+          </div>
+        </div>
+
+        <!-- RIGHT: Action & Inspection Panel -->
+        <div class="pane inspection-pane">
+          <div class="pane-bar">
+            <span class="pane-bar-label">Inspection Panel</span>
+            <span class="pane-bar-meta" id="findingsMeta">—</span>
+          </div>
+          <div class="pane-body" id="findingsScroll">
+            <div id="findingsList" class="findings-stack"></div>
+            <div id="findingsEmpty" class="empty-card" hidden>
+              No findings. Run analysis from the inventory action column.
+            </div>
+          </div>
+
+          <!-- Attestation Footer Control Bar -->
+          <div class="attest-footer" id="attestFooter" hidden>
+            <div class="attest-header">
+              <span class="attest-label">Adjudication Required</span>
+              <span class="attest-target" id="attestTarget">—</span>
+            </div>
+            <textarea id="attestNote" placeholder="Adjudication note (required for edit and reject)"></textarea>
+            <div class="attest-controls" id="gate-interactive-controls">
+              <button class="btn-reject" id="rejectBtn">Reject Finding</button>
+              <button class="btn-edit"   id="editBtn">Edit Finding Text</button>
+              <button class="btn-approve" id="approveBtn">Approve Finding &amp; Sign</button>
+            </div>
+            <div class="attest-seal" id="gate-signoff-success" hidden></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ VIEW 04: AUDIT TRAIL LEDGER ============ -->
+    <div class="view-frame" id="view-audit">
+      <header class="view-header">
+        <h2>Audit Trail Ledger</h2>
+        <p class="view-sub">
+          Tamper-evident SHA-256 hash chain. Every state-changing event recorded.
+          <span class="chain-state" id="chainState">—</span>
+        </p>
+      </header>
+      <div class="data-table-wrapper">
+        <table class="data-table" id="auditTable">
+          <thead><tr>
+            <th>Block Commit ID</th>
+            <th>Timestamp</th>
+            <th>Target Scope</th>
+            <th>Action Performed</th>
+            <th>Verification</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty-row" id="auditEmpty">No ledger entries yet.</div>
+      </div>
+    </div>
+
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="footer-left">QUILL does not make the authorization decision. Findings require named human attestation before export.</div>
+  <div class="footer-right" id="footerEnv">—</div>
+</footer>
+
+<script src="./app.js?v=14"></script>
+</body>
+</html>

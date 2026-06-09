@@ -15,6 +15,10 @@ const state = {
   audit: [],
   chainValid: true,
   health: null,
+  // Phase II — packages
+  packages: [],
+  currentPackageId: null,
+  currentPackage: null,
 };
 
 // ─────────────────────────────────────────── API ──
@@ -55,6 +59,7 @@ function switchView(viewId) {
   if (link) link.classList.add("active");
   if (viewId === "dashboard")   refreshDashboard();
   if (viewId === "inventory")   renderInventory();
+  if (viewId === "packages")    renderPackages();
   if (viewId === "audit")       refreshAudit();
 }
 
@@ -737,6 +742,193 @@ function escapeHtml(s) {
     .replaceAll('"',"&quot;").replaceAll("'","&#39;");
 }
 function cssEsc(s) { return (s || "").replace(/(["\\])/g, "\\$1"); }
+
+// ─────────────────────────────────────────── PACKAGES VIEW (Phase II) ──
+async function renderPackages() {
+  try { state.packages = await api("/packages"); } catch (e) { state.packages = []; }
+  const tbody = $("#packagesTable tbody"); tbody.innerHTML = "";
+  $("#packagesEmpty").hidden = state.packages.length > 0;
+
+  for (const p of state.packages) {
+    const tr = document.createElement("tr");
+    tr.classList.add("is-clickable");
+    if (p.id === state.currentPackageId) tr.classList.add("is-selected");
+    const updated = p.updated_at ? new Date(p.updated_at).toISOString().slice(0,19).replace("T"," ") : "—";
+    tr.innerHTML = `
+      <td><code>${escapeHtml(p.id)}</code></td>
+      <td>${escapeHtml(p.name)}</td>
+      <td><span class="pkg-status ${p.status}">${p.status.replace(/_/g," ")}</span></td>
+      <td>${p.artifact_count ?? 0}</td>
+      <td class="muted">${updated}</td>
+      <td class="col-action">
+        <button class="btn-small btn-ghost" data-act="open" data-id="${escapeHtml(p.id)}">Open</button>
+      </td>`;
+    tr.querySelector('[data-act="open"]').onclick = (e) => {
+      e.stopPropagation();
+      openPackageDetail(p.id);
+    };
+    tr.onclick = () => openPackageDetail(p.id);
+    tbody.appendChild(tr);
+  }
+}
+
+async function openPackageDetail(pkgId) {
+  state.currentPackageId = pkgId;
+  let pkg;
+  try {
+    pkg = await api(`/packages/${pkgId}`);
+  } catch (e) {
+    alert("Couldn't load package: " + e.message);
+    return;
+  }
+  state.currentPackage = pkg;
+  $("#pkgDetail").hidden = false;
+  $("#pkgDetailName").textContent = pkg.name;
+  $("#pkgDetailMeta").innerHTML =
+    `${escapeHtml(pkg.id)} · <span class="pkg-status ${pkg.status}">${pkg.status.replace(/_/g," ")}</span>` +
+    `${pkg.description ? ` · ${escapeHtml(pkg.description)}` : ""}`;
+
+  // Member artifacts
+  const ul = $("#pkgArtifactList"); ul.innerHTML = "";
+  const arts = pkg.artifacts || [];
+  $("#pkgArtifactCount").textContent = arts.length;
+  $("#pkgArtifactEmpty").hidden = arts.length > 0;
+  arts.forEach(a => {
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <span class="name" title="${escapeHtml(a.filename)}">${escapeHtml(a.filename)}</span>
+      <span class="meta">${escapeHtml(a.type)} · ${escapeHtml(a.status)}</span>
+      <button class="detach" data-id="${escapeHtml(a.id)}" title="Remove from package" aria-label="Remove">×</button>`;
+    li.querySelector(".detach").onclick = () => detachArtifact(pkgId, a.id);
+    ul.appendChild(li);
+  });
+
+  // Disable analyze if archived or empty
+  const archived = pkg.status === "archived";
+  $("#pkgAnalyzeBtn").disabled = archived || arts.length === 0;
+  $("#pkgAttachBtn").disabled  = archived;
+  $("#pkgStatusBtn").disabled  = archived && pkg.status === "archived";
+
+  // Re-highlight the row in the table
+  $$('#packagesTable tbody tr').forEach(r => {
+    r.classList.toggle("is-selected", r.querySelector("code")?.textContent === pkgId);
+  });
+
+  // Show latest run if we have one cached
+  const latestRun = state.runByArtifact.get(`pkg:${pkgId}`);
+  const slot = $("#pkgLatestRun");
+  if (latestRun) {
+    const fs = state.findingsByRun.get(latestRun.id) || [];
+    slot.innerHTML = `
+      <div class="empty-hint" style="text-align:left;">
+        <div><b>${escapeHtml(latestRun.id)}</b> · ${escapeHtml(latestRun.status)} · tiers ${(latestRun.tier_path||[]).join(" → ")}</div>
+        <div>${fs.length} finding${fs.length === 1 ? "" : "s"} emitted.</div>
+      </div>`;
+  } else {
+    slot.innerHTML = `<div class="empty-hint">No runs yet. Click "Analyze package" to run one.</div>`;
+  }
+}
+
+$("#pkgCloseBtn")?.addEventListener?.("click", () => {
+  $("#pkgDetail").hidden = true;
+  state.currentPackageId = null; state.currentPackage = null;
+  $$('#packagesTable tbody tr').forEach(r => r.classList.remove("is-selected"));
+});
+
+$("#pkgCreateBtn")?.addEventListener?.("click", async () => {
+  const name = prompt("Package name (e.g. 'Aerospace SSP Package'):");
+  if (!name || !name.trim()) return;
+  const desc = prompt("Description (optional):", "") || "";
+  try {
+    const pkg = await api("/packages", { method: "POST", json: { name: name.trim(), description: desc } });
+    await renderPackages();
+    openPackageDetail(pkg.id);
+  } catch (e) {
+    alert("Create package failed: " + e.message);
+  }
+});
+
+$("#pkgAttachBtn")?.addEventListener?.("click", async () => {
+  if (!state.currentPackageId) return;
+  // Load artifacts available in this tenant
+  let arts = [];
+  try { arts = await api("/artifacts"); } catch (e) { alert("Couldn't load artifacts: " + e.message); return; }
+  // Exclude artifacts already in this package
+  const memberIds = new Set((state.currentPackage?.artifacts || []).map(a => a.id));
+  const available = arts.filter(a => !memberIds.has(a.id) && !a.package_id);
+  if (!available.length) {
+    alert("No unassigned artifacts available. Upload some via the Artifact Inventory first.");
+    return;
+  }
+  const list = available.map((a, i) => `${i+1}. ${a.filename}  [${a.id}]`).join("\n");
+  const pick = prompt(`Pick an artifact to attach (1-${available.length}):\n\n${list}`);
+  if (!pick) return;
+  const idx = parseInt(pick, 10) - 1;
+  if (!(idx >= 0 && idx < available.length)) { alert("Invalid choice."); return; }
+  const target = available[idx];
+  try {
+    await api(`/packages/${state.currentPackageId}/artifacts/${target.id}`, { method: "POST" });
+    await renderPackages();
+    await openPackageDetail(state.currentPackageId);
+  } catch (e) {
+    alert("Attach failed: " + e.message);
+  }
+});
+
+async function detachArtifact(pkgId, artifactId) {
+  if (!confirm(`Remove ${artifactId} from this package?`)) return;
+  try {
+    await api(`/packages/${pkgId}/artifacts/${artifactId}`, { method: "DELETE" });
+    await renderPackages();
+    await openPackageDetail(pkgId);
+  } catch (e) {
+    alert("Detach failed: " + e.message);
+  }
+}
+
+$("#pkgAnalyzeBtn")?.addEventListener?.("click", async () => {
+  if (!state.currentPackageId) return;
+  const btn = $("#pkgAnalyzeBtn");
+  const orig = btn.textContent;
+  btn.textContent = "Analyzing…"; btn.disabled = true;
+  try {
+    const run = await api(`/packages/${state.currentPackageId}/runs`, { method: "POST", timeout: 300000 });
+    // Cache the run + findings for the detail view
+    state.runByArtifact.set(`pkg:${state.currentPackageId}`, run);
+    const fs = await api(`/runs/${run.id}/findings`);
+    state.findingsByRun.set(run.id, fs);
+    await openPackageDetail(state.currentPackageId);
+    alert(`Analyzed — ${fs.length} finding(s). Open Attestation Gate for any artifact in the package to review them.`);
+  } catch (e) {
+    alert("Analyze failed: " + e.message);
+  } finally {
+    btn.textContent = orig; btn.disabled = false;
+  }
+});
+
+$("#pkgStatusBtn")?.addEventListener?.("click", async () => {
+  if (!state.currentPackage) return;
+  const cur = state.currentPackage.status;
+  const TRANSITIONS = {
+    draft:        ["under_review", "archived"],
+    under_review: ["draft", "submitted", "archived"],
+    submitted:    ["archived"],
+    archived:     [],
+  };
+  const options = TRANSITIONS[cur] || [];
+  if (!options.length) { alert(`'${cur}' is terminal — no further transitions.`); return; }
+  const pick = prompt(`Current status: ${cur}\n\nChange to one of:\n${options.map((o,i) => `${i+1}. ${o}`).join("\n")}`);
+  if (!pick) return;
+  const idx = parseInt(pick, 10) - 1;
+  if (!(idx >= 0 && idx < options.length)) { alert("Invalid choice."); return; }
+  try {
+    await api(`/packages/${state.currentPackageId}/status`, { method: "PATCH", json: { status: options[idx] } });
+    await renderPackages();
+    await openPackageDetail(state.currentPackageId);
+  } catch (e) {
+    alert("Status change failed: " + e.message);
+  }
+});
 
 // ─────────────────────────────────────────── Programs (Phase II) ──
 const PROGRAM_KEY = "quill_program";

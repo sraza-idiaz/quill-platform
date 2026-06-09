@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>QUILL — RMF Pre-Adjudication Terminal</title>
 <link rel="icon" type="image/png" href="./quill-owl.png" />
-<link rel="stylesheet" href="./styles.css?v=20" />
+<link rel="stylesheet" href="./styles.css?v=21" />
 </head>
 <body>
 
@@ -46,7 +46,7 @@
 </header>
 
 <main>
-  <!-- ─── Sidebar nav (4 views) ─── -->
+  <!-- ─── Sidebar nav (5 views — Phase II adds Packages) ─── -->
   <aside class="sidebar">
     <nav class="sidebar-nav">
       <button class="nav-link active" id="link-dashboard"   data-view="dashboard">
@@ -54,6 +54,9 @@
       </button>
       <button class="nav-link" id="link-inventory"          data-view="inventory">
         <span class="nav-icon">⊞</span><span>Artifact Inventory</span>
+      </button>
+      <button class="nav-link" id="link-packages"           data-view="packages">
+        <span class="nav-icon">◫</span><span>Packages</span>
       </button>
       <button class="nav-link" id="link-attestation"        data-view="attestation">
         <span class="nav-icon">◈</span><span>Attestation Gate</span>
@@ -153,6 +156,72 @@
       </div>
     </div>
 
+    <!-- ============ VIEW 02b: PACKAGES (Phase II FR-PKG-*) ============ -->
+    <div class="view-frame" id="view-packages">
+      <header class="view-header">
+        <h2>Packages</h2>
+        <p class="view-sub">
+          Bundles of related artifacts (SSP · architecture · OSCAL · supplemental docs)
+          analyzed together. Cross-artifact reasoning fires across the whole bundle.
+        </p>
+      </header>
+
+      <div class="pkg-toolbar">
+        <button type="button" id="pkgCreateBtn">+ New package</button>
+        <span class="pkg-toolbar-hint" id="pkgToolbarHint">
+          Click a row to manage its artifacts and analyze it.
+        </span>
+      </div>
+
+      <div class="data-table-wrapper">
+        <table class="data-table" id="packagesTable">
+          <thead><tr>
+            <th>Package ID</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Artifacts</th>
+            <th>Last updated</th>
+            <th class="col-action">Action</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty-row" id="packagesEmpty">No packages yet. Create one to bundle artifacts.</div>
+      </div>
+
+      <!-- Package detail drawer — slides in when a package is selected -->
+      <section class="pkg-detail" id="pkgDetail" hidden>
+        <header class="pkg-detail-header">
+          <div>
+            <h3 id="pkgDetailName">—</h3>
+            <p class="pkg-detail-meta" id="pkgDetailMeta">—</p>
+          </div>
+          <div class="pkg-detail-actions" id="pkgDetailActions">
+            <button class="btn-ghost btn-small" id="pkgAttachBtn">+ Attach artifact</button>
+            <button class="btn-ghost btn-small" id="pkgAnalyzeBtn">↻ Analyze package</button>
+            <button class="btn-ghost btn-small" id="pkgStatusBtn">→ Change status</button>
+            <button class="btn-ghost btn-small" id="pkgCloseBtn" aria-label="close">×</button>
+          </div>
+        </header>
+
+        <div class="pkg-detail-body">
+          <div class="pkg-detail-section">
+            <div class="section-label"><span>Member artifacts</span>
+              <span class="count" id="pkgArtifactCount">0</span>
+            </div>
+            <ul id="pkgArtifactList" class="list"></ul>
+            <div id="pkgArtifactEmpty" class="empty-hint">
+              No artifacts attached. Click "Attach artifact" to add one from the Inventory.
+            </div>
+          </div>
+
+          <div class="pkg-detail-section">
+            <div class="section-label"><span>Latest analysis</span></div>
+            <div id="pkgLatestRun" class="empty-hint">No runs yet. Click "Analyze package" to run one.</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
     <!-- ============ VIEW 03: ATTESTATION GATE ============ -->
     <div class="view-frame" id="view-attestation">
       <header class="view-header gate-header">
@@ -245,7 +314,7 @@
   <div class="footer-right" id="footerEnv">—</div>
 </footer>
 
-<script src="./app.js?v=20"></script>
+<script src="./app.js?v=21"></script>
 <script>
 (function(){
   var root=document.documentElement, KEY='quill-theme';

@@ -394,15 +394,18 @@ function renderSourceCanvas() {
     return;
   }
 
-  // Build merged span list (artifact-quote findings only — catalog refs render differently)
+  // Build merged span list (artifact-quote findings only — catalog refs render differently).
+  // Uses a whitespace-tolerant search to match the citation validator's behavior on the
+  // backend: "foo\nbar" and "foo  bar" are treated the same. A strict indexOf would miss
+  // these and the highlight would silently fail to appear.
   const spans = [];
   for (const f of findings) {
     for (const s of (f.evidence_spans || [])) {
       if (s.artifact_id.startsWith("catalog:")) continue;
       const q = (s.quoted_text || "").trim();
       if (!q) continue;
-      const idx = text.indexOf(q);
-      if (idx >= 0) spans.push({ start: idx, end: idx + q.length, finding: f });
+      const range = findQuoteInText(text, q);
+      if (range) spans.push({ start: range[0], end: range[1], finding: f });
     }
   }
   spans.sort((a, b) => a.start - b.start || b.end - a.end);
@@ -734,6 +737,32 @@ function findingTitle(f) {
   if (t === "narrative_present_evidence_unclear")
     return "Finding: Narrative Present but Evidence is Unclear";
   return "Finding: " + (t || "").replace(/_/g, " ");
+}
+
+/* Whitespace-tolerant locator for an AI-quoted span inside the artifact text.
+ * The backend's citation validator already accepts whitespace variation
+ * ("foo\nbar" ≡ "foo  bar"), so the UI must too — otherwise highlighting
+ * silently fails on any quote that crossed a paragraph break.
+ *
+ * Strategy:
+ *   1. Try a strict indexOf first — fast common case.
+ *   2. Tokenize the quote on whitespace and build a regex that allows any
+ *      run of whitespace (incl. newlines) between tokens. That mirrors the
+ *      Python validator's `" ".join(s.split())` normalization.
+ */
+function findQuoteInText(text, quote) {
+  if (!text || !quote) return null;
+  let idx = text.indexOf(quote);
+  if (idx >= 0) return [idx, idx + quote.length];
+  const tokens = quote.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return null;
+  const esc = tokens.map(t => t.replace(/[-\\^$*+?.()|[\]{}]/g, "\\$&"));
+  try {
+    const re = new RegExp(esc.join("\\s+"));
+    const m = re.exec(text);
+    if (m) return [m.index, m.index + m[0].length];
+  } catch (_) { /* fall through */ }
+  return null;
 }
 
 function escapeHtml(s) {

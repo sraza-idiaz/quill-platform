@@ -175,6 +175,13 @@ async def list_artifacts(request: Request, user=Depends(get_current_user)):
 
 
 # -- runs ------------------------------------------------------------------- #
+async def _baseline_for(ctx, tenant: str) -> str | None:
+    """Look up the per-program baseline (Phase II FR-MT-01). Falls back to the
+    catalog default when the program doesn't exist or has no baseline set."""
+    p = await ctx.repo.get_program(tenant) if tenant else None
+    return p.baseline if p and p.baseline else None
+
+
 @router.post("/artifacts/{artifact_id}/runs", status_code=status.HTTP_201_CREATED)
 async def create_run(artifact_id: str, request: Request,
                      user=Depends(require_role("engineer", "admin"))):
@@ -185,12 +192,15 @@ async def create_run(artifact_id: str, request: Request,
     path = Path(ctx.tmp_paths.get(artifact_id, ""))
     if not path.exists():
         raise HTTPException(status.HTTP_409_CONFLICT, "artifact content unavailable")
-    run = await ctx.orchestrator.analyze(a, path)
+    # Per-program baseline override (Phase II FR-MT-01 / FR-CAT-05).
+    baseline = await _baseline_for(ctx, user["tenant"])
+    run = await ctx.orchestrator.analyze(a, path, baseline=baseline)
     ctx.audit.append(
         tenant=user["tenant"], actor=user["user"], action=f"run.{run.status.value}",
         target_type="run", target_id=run.id,
         metadata={"artifact_id": run.artifact_id, "tier_path": [t.value for t in run.tier_path],
-                  "circuit_breaker_tripped": run.circuit_breaker_tripped},
+                  "circuit_breaker_tripped": run.circuit_breaker_tripped,
+                  "baseline": baseline or ctx.catalog.baseline},
     )
     return run.model_dump()
 

@@ -48,13 +48,19 @@ class Orchestrator:
         self.analyzer = analyzer  # None -> Tier 2 skipped (degraded)
 
     async def analyze_package(self, items: list[tuple[Artifact, Path]],
-                              tenant: str = "default") -> Run:
+                              tenant: str = "default",
+                              baseline: Optional[str] = None) -> Run:
         """Analyze a set of artifacts as ONE run so cross-artifact consistency
         checks (FR-T0-03) fire across them. The run is attributed to the first
         artifact for compatibility with the single-artifact API.
+
+        Phase II — `baseline` overrides catalog.baseline so each program can
+        analyze against its own baseline (FR-MT-01 / FR-CAT-05). The run
+        records the active baseline in tier_path metadata.
         """
         if not items:
             raise ValueError("analyze_package requires at least one artifact")
+        active_baseline = baseline or self.catalog.baseline
         primary = items[0][0]
         run = Run(id=f"run-{uuid.uuid4().hex[:12]}", artifact_id=primary.id,
                   status=RunStatus.analyzing)
@@ -79,11 +85,11 @@ class Orchestrator:
             self.repo.set_artifact_text(a.id, txt)
             artifact_texts[a.id] = txt
 
-        catalog_refs = {f"catalog:{self.catalog.baseline}"}
+        catalog_refs = {f"catalog:{active_baseline}"}
         breaker = CircuitBreaker(self.rubric.circuit_breaker_threshold)
         all_findings: list[Finding] = []
 
-        t0 = run_tier0(run.id, all_segments, self.catalog, self.rubric)
+        t0 = run_tier0(run.id, all_segments, self.catalog, self.rubric, baseline=active_baseline)
         all_findings += t0
         run.tier_path.append(Tier.t0)
 
@@ -124,7 +130,11 @@ class Orchestrator:
                     run.circuit_breaker_tripped, len(items))
         return run
 
-    async def analyze(self, artifact: Artifact, path: Path) -> Run:
+    async def analyze(self, artifact: Artifact, path: Path,
+                      baseline: Optional[str] = None) -> Run:
+        """Single-artifact run. `baseline` overrides catalog.baseline for the
+        per-program case (Phase II FR-MT-01)."""
+        active_baseline = baseline or self.catalog.baseline
         run = Run(id=f"run-{uuid.uuid4().hex[:12]}", artifact_id=artifact.id,
                   status=RunStatus.analyzing)
         await self.repo.save_run(run, tenant=artifact.tenant)
@@ -142,13 +152,13 @@ class Orchestrator:
 
         artifact_text = "\n".join(s.text for s in segments)
         self.repo.set_artifact_text(artifact.id, artifact_text)
-        catalog_refs = {f"catalog:{self.catalog.baseline}"}
+        catalog_refs = {f"catalog:{active_baseline}"}
 
         breaker = CircuitBreaker(self.rubric.circuit_breaker_threshold)
         all_findings: list[Finding] = []
 
-        # Tier 0 — deterministic
-        t0 = run_tier0(run.id, segments, self.catalog, self.rubric)
+        # Tier 0 — deterministic, using the per-program baseline
+        t0 = run_tier0(run.id, segments, self.catalog, self.rubric, baseline=active_baseline)
         all_findings += t0
         run.tier_path.append(Tier.t0)
 

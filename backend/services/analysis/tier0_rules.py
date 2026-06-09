@@ -18,6 +18,8 @@ distinctly from artifact spans.
 
 from __future__ import annotations
 
+from typing import Optional
+
 import hashlib
 import re
 
@@ -105,18 +107,24 @@ def _make_finding(
 
 
 def check_coverage(
-    run_id: str, segments: list[NormalizedSegment], catalog: Catalog, rubric: Rubric
+    run_id: str, segments: list[NormalizedSegment], catalog: Catalog, rubric: Rubric,
+    baseline: Optional[str] = None,
 ) -> list[Finding]:
-    """FR-T0-01: baseline controls with no implementation statement."""
+    """FR-T0-01: baseline controls with no implementation statement.
+
+    `baseline` overrides catalog.baseline at run-time. Phase II uses this so
+    each program can have its own baseline (FR-MT-01 / FR-CAT-05).
+    """
+    active = baseline or catalog.baseline
     present = set(_segments_by_control(segments).keys())
     searched = sorted({s.artifact_id for s in segments})
     findings: list[Finding] = []
-    for control in catalog.baseline_controls():
+    for control in catalog.baseline_controls(active):
         if control.control_id not in present:
             ref_span = EvidenceSpan(
-                artifact_id=f"catalog:{catalog.baseline}",
+                artifact_id=f"catalog:{active}",
                 locator=control.control_id,
-                quoted_text=f"{control.control_id} {control.title} (required by {catalog.baseline} baseline)",
+                quoted_text=f"{control.control_id} {control.title} (required by {active} baseline)",
             )
             findings.append(
                 _make_finding(
@@ -125,7 +133,7 @@ def check_coverage(
                     FindingType.missing,
                     recommendation=f"Add an implementation statement for {control.control_id} ({control.title}).",
                     rationale=(
-                        f"{control.control_id} is required by the {catalog.baseline} baseline but no "
+                        f"{control.control_id} is required by the {active} baseline but no "
                         f"implementation statement was found. Artifacts searched: {searched}."
                     ),
                     spans=[ref_span],
@@ -230,11 +238,16 @@ def check_cross_artifact_consistency(
 
 
 def run_tier0(
-    run_id: str, segments: list[NormalizedSegment], catalog: Catalog, rubric: Rubric
+    run_id: str, segments: list[NormalizedSegment], catalog: Catalog, rubric: Rubric,
+    baseline: Optional[str] = None,
 ) -> list[Finding]:
-    """Run all Tier 0 checks. Deterministic order (FR-T0-05)."""
+    """Run all Tier 0 checks. Deterministic order (FR-T0-05).
+
+    `baseline` overrides catalog.baseline so per-program baselines work
+    (Phase II FR-MT-01 / FR-CAT-05). When omitted, the catalog default applies.
+    """
     findings: list[Finding] = []
-    findings += check_coverage(run_id, segments, catalog, rubric)
+    findings += check_coverage(run_id, segments, catalog, rubric, baseline=baseline)
     findings += check_required_fields(run_id, segments, catalog, rubric)
     findings += check_cross_artifact_consistency(run_id, segments, catalog, rubric)
     findings.sort(key=lambda f: (f.control_id, f.type.value, f.id))

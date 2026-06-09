@@ -1,47 +1,49 @@
-/* QUILL UI — AXO V1 Charcoal brand (DECISION-017) on the new 4-view layout.
-   Branding tokens unchanged: charcoal #1c1c1e, cream #f0ece4, terracotta #c87840,
-   DM Mono body, Syne display, Instrument Serif decorative. */
+/* QUILL UI — "Ink & Sky" brand (zbranch): quill-inspired (ink, paper, sign-off)
+   fused with a Snowflake-grade sky-blue system. Snowflake Blue #29b5e8 primary,
+   deep ink #11567f, parchment-dark surfaces, coral alarm. DM Mono body,
+   Syne display, Instrument Serif decorative (the "signed" voice). */
 
 @import url("https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Instrument+Serif:ital@0;1&display=swap");
 
 :root {
-  /* Charcoal background (dark-mode-first per PRD) */
-  --bg-base:       #0f1612;
-  --bg-surface:    #161e1a;
-  --bg-elevated:   #1c2620;
-  --bg-hover:      #243029;
-  --bg-titlebar:   #0a0f0c;
+  /* Ink-dark, blue-tinted background (dark-mode-first) */
+  --bg-base:       #0a1016;
+  --bg-surface:    #0f1924;
+  --bg-elevated:   #14202e;
+  --bg-hover:      #1b2c3c;
+  --bg-titlebar:   #070c11;
 
-  --border-subtle: #1a221d;
-  --border:        #243029;
-  --border-strong: #2e3a32;
+  --border-subtle: #14202b;
+  --border:        #1c3242;
+  --border-strong: #284559;
 
-  --text-primary:   #f0ece4;
-  --text-secondary: #b3beb6;
-  --text-muted:     #7a8780;
-  --text-disabled:  #3a4640;
+  --text-primary:   #eaf3fb;
+  --text-secondary: #aebfcd;
+  --text-muted:     #7f95a6;
+  --text-disabled:  #3a4a57;
 
-  /* PRD palette: #6fcf97 primary, #a8e6c1 accent, #ff7a6b alarm */
-  --accent:        #6fcf97;
-  --accent-hover:  #8edcaf;
-  --accent-soft:   #a8e6c1;
-  --accent-subtle: #6fcf971c;
-  --accent-glow:   #6fcf9745;
+  /* Snowflake sky-blue: #29b5e8 primary, #7fd3f2 soft, ink #11567f */
+  --accent:        #29b5e8;
+  --accent-hover:  #58c8f0;
+  --accent-soft:   #7fd3f2;
+  --accent-deep:   #11567f;
+  --accent-subtle: #29b5e81c;
+  --accent-glow:   #29b5e845;
 
   --alarm:         #ff7a6b;
   --alarm-soft:    #ffa599;
   --alarm-subtle:  #ff7a6b1c;
 
-  --status-live:   #6fcf97;
+  --status-live:   #29b5e8;
   --status-warn:   #f2c168;
   --status-error:  #ff7a6b;
-  --status-ok:     #6fcf97;
+  --status-ok:     #34d399;
 
-  /* Severity — semantic finding-status colors (PRD) */
+  /* Severity — semantic finding-status colors */
   --sev-critical: #ff7a6b;
   --sev-high:     #ff9d6b;
   --sev-medium:   #f2c168;
-  --sev-low:      #8aa298;
+  --sev-low:      #7fa8c4;
 
   --font-display: 'Syne', system-ui, sans-serif;
   --font-mono:    'DM Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
@@ -86,11 +88,11 @@ header.topbar {
 }
 .brand { display: flex; align-items: center; gap: var(--space-3); }
 .brand .mark {
-  width: 28px; height: 28px;
-  display: inline-grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 1px;
+  width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  filter: drop-shadow(0 0 6px var(--accent-glow));
 }
-.brand .mark span { background: transparent; }
-.brand .mark span.on { background: var(--accent); box-shadow: 0 0 4px var(--accent-glow); }
+.brand .mark svg { width: 34px; height: 34px; image-rendering: pixelated; }
 .brand-text h1 {
   margin: 0;
   font-family: var(--font-display); font-weight: 800;
@@ -117,7 +119,7 @@ header.topbar {
   content: ""; width: 5px; height: 5px; border-radius: 50%;
   background: var(--text-muted);
 }
-.env-chip.ok    { color: var(--accent);       border-color: rgba(111,207,151,0.4); }
+.env-chip.ok    { color: var(--accent);       border-color: rgba(41,181,232,0.4); }
 .env-chip.ok::before    { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
 .env-chip.warn  { color: var(--status-warn); border-color: rgba(242,193,104,0.4); }
 .env-chip.warn::before  { background: var(--status-warn); }
@@ -310,12 +312,12 @@ aside.sidebar {
   padding: 3px 9px; border-radius: var(--radius-sm);
   border: 1px solid;
 }
-.vstatus.auto-passed   { color: var(--accent);       border-color: rgba(111,207,151,0.4); background: rgba(111,207,151,0.10); }
+.vstatus.auto-passed   { color: var(--accent);       border-color: rgba(41,181,232,0.4); background: rgba(41,181,232,0.10); }
 .vstatus.pending-gate  { color: var(--alarm);        border-color: rgba(255,122,107,0.4); background: rgba(255,122,107,0.10); }
 .vstatus.fully-attested{ color: var(--accent-soft);  border-color: rgba(168,230,193,0.4); background: rgba(168,230,193,0.10); }
 .vstatus.ingested      { color: var(--text-secondary); border-color: var(--border-strong); background: var(--bg-elevated); }
 .vstatus.processing    { color: var(--status-warn);  border-color: rgba(242,193,104,0.4); background: rgba(242,193,104,0.10); }
-.vstatus.valid         { color: var(--accent);       border-color: rgba(111,207,151,0.4); background: rgba(111,207,151,0.10); }
+.vstatus.valid         { color: var(--accent);       border-color: rgba(41,181,232,0.4); background: rgba(41,181,232,0.10); }
 
 /* Upload bar in inventory */
 .upload-bar {

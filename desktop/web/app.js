@@ -394,53 +394,82 @@ function renderSourceCanvas() {
     return;
   }
 
-  // Build merged span list (artifact-quote findings only — catalog refs render differently).
-  // Uses a whitespace-tolerant search to match the citation validator's behavior on the
-  // backend: "foo\nbar" and "foo  bar" are treated the same. A strict indexOf would miss
-  // these and the highlight would silently fail to appear.
-  const spans = [];
+  // Build (range, finding) pairs. Whitespace-tolerant matcher mirrors the
+  // backend citation validator's normalization.
+  const pairs = [];
   for (const f of findings) {
     for (const s of (f.evidence_spans || [])) {
       if (s.artifact_id.startsWith("catalog:")) continue;
       const q = (s.quoted_text || "").trim();
       if (!q) continue;
       const range = findQuoteInText(text, q);
-      if (range) spans.push({ start: range[0], end: range[1], finding: f });
+      if (range) pairs.push({ start: range[0], end: range[1], finding: f });
     }
   }
-  spans.sort((a, b) => a.start - b.start || b.end - a.end);
+  // Sort by start, then by widest first so when two ranges share a start the
+  // wider one wins and becomes the merge anchor.
+  pairs.sort((a, b) => a.start - b.start || b.end - a.end);
 
-  // De-overlap (keep the earliest, drop overlapping later ones for clean rendering)
-  const placed = [];
-  for (const s of spans) {
-    const last = placed[placed.length - 1];
-    if (last && s.start < last.end) continue;
-    placed.push(s);
+  // Merge overlapping ranges, COLLECTING every finding whose quote overlaps
+  // the merged region. This is the fix: two findings on the same paragraph
+  // (common — T0 + T2 both flag AC-2) used to drop one and break its
+  // highlight. Now both link into the same rendered span.
+  const merged = [];
+  for (const p of pairs) {
+    const last = merged.length ? merged[merged.length - 1] : null;
+    if (last && p.start < last.end) {
+      last.end = Math.max(last.end, p.end);
+      if (!last.findings.find(f => f.id === p.finding.id)) {
+        last.findings.push(p.finding);
+      }
+    } else {
+      merged.push({ start: p.start, end: p.end, findings: [p.finding] });
+    }
   }
 
-  // Render: markdown headings to HTML, paragraphs to <p>, and spans as <span class="target-span" data-finding="...">
-  // Use a simple approach: build the inline string with placeholders, then run lightweight md-to-html on the surrounding text only.
-  let pieces = [];
+  // Severity precedence for the rendered span: pick the worst severity among
+  // the findings sharing it, so the dominant color matches the worst issue.
+  const SEV_RANK = { critical: 4, high: 3, medium: 2, low: 1 };
+  const worstSeverity = (findings) => {
+    let best = findings[0];
+    for (const f of findings) {
+      if ((SEV_RANK[f.severity] || 0) > (SEV_RANK[best.severity] || 0)) best = f;
+    }
+    return best.severity;
+  };
+
+  // Build alternating text/span pieces.
+  const pieces = [];
   let cursor = 0;
-  for (const s of placed) {
-    pieces.push({ kind: "text", value: text.slice(cursor, s.start) });
-    pieces.push({ kind: "span", value: text.slice(s.start, s.end), finding: s.finding });
-    cursor = s.end;
+  for (const m of merged) {
+    pieces.push({ kind: "text", value: text.slice(cursor, m.start) });
+    pieces.push({ kind: "span", value: text.slice(m.start, m.end), findings: m.findings });
+    cursor = m.end;
   }
   pieces.push({ kind: "text", value: text.slice(cursor) });
 
-  // Lightweight markdown: # / ## / ### headings, blank-line-separated paragraphs.
+  // Render: each `target-span` carries `data-finding-ids` (comma-separated)
+  // so it can light up for ANY of its associated findings. The legacy
+  // `data-finding` attribute holds the first id for back-compat.
   const html = pieces.map(p => {
     if (p.kind === "span") {
-      const sev = severityClass(p.finding.severity);
-      return `<span class="target-span ${sev}" data-finding="${escapeHtml(p.finding.id)}">${escapeHtml(p.value)}</span>`;
+      const ids = p.findings.map(f => f.id);
+      const sev = severityClass(worstSeverity(p.findings));
+      return `<span class="target-span ${sev}"`
+           + ` data-finding="${escapeHtml(ids[0])}"`
+           + ` data-finding-ids="${escapeHtml(ids.join(","))}">`
+           + `${escapeHtml(p.value)}</span>`;
     }
     return mdToHtml(p.value);
   }).join("");
 
   canvas.innerHTML = html;
+  // Clicking a span in the source pane picks one of its findings (the first).
   canvas.querySelectorAll(".target-span").forEach(el => {
-    el.addEventListener("click", () => selectFinding(el.dataset.finding, { fromSpan: true }));
+    el.addEventListener("click", () => {
+      const ids = (el.dataset.findingIds || el.dataset.finding || "").split(",").filter(Boolean);
+      if (ids.length) selectFinding(ids[0], { fromSpan: true });
+    });
   });
 }
 
@@ -508,7 +537,13 @@ function renderFindingCard(f) {
 function selectFinding(id, { fromSpan = false } = {}) {
   state.currentFindingId = id;
   $$(".finding-card").forEach(c => c.classList.toggle("active", c.dataset.finding === id));
-  $$(".target-span").forEach(s => s.classList.toggle("active", s.dataset.finding === id));
+  // A span may be associated with multiple findings (overlapping quotes from
+  // T0 + T2 are common). Light up any span whose finding-id list contains
+  // the selected one.
+  $$(".target-span").forEach(s => {
+    const ids = (s.dataset.findingIds || s.dataset.finding || "").split(",");
+    s.classList.toggle("active", ids.includes(id));
+  });
   const f = (state.findingsByRun.get(state.currentRunId) || []).find(x => x.id === id);
   if (!f) return hideAttestFooter();
   // Bring the card or span into view
@@ -516,7 +551,17 @@ function selectFinding(id, { fromSpan = false } = {}) {
     const card = document.querySelector(`.finding-card[data-finding="${cssEsc(id)}"]`);
     if (card) card.scrollIntoView({ block: "center", behavior: "smooth" });
   } else {
-    const span = document.querySelector(`.target-span[data-finding="${cssEsc(id)}"]`);
+    // Scroll the FIRST span associated with this finding into view.
+    // `data-finding-ids` is the canonical (multi-id) attribute; we match a
+    // delimited substring so we still hit spans that carry many ids.
+    const ids = cssEsc(id);
+    const span = document.querySelector(
+      `.target-span[data-finding-ids^="${ids},"], `
+      + `.target-span[data-finding-ids*=",${ids},"], `
+      + `.target-span[data-finding-ids$=",${ids}"], `
+      + `.target-span[data-finding-ids="${ids}"], `
+      + `.target-span[data-finding="${ids}"]`
+    );
     if (span) span.scrollIntoView({ block: "center", behavior: "smooth" });
   }
   showAttestFooter(f);

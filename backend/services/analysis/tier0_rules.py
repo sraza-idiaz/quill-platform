@@ -150,7 +150,20 @@ def check_coverage(
 def check_required_fields(
     run_id: str, segments: list[NormalizedSegment], catalog: Catalog, rubric: Rubric
 ) -> list[Finding]:
-    """FR-T0-02: required-field absence + unfilled ODP placeholders."""
+    """FR-T0-02: required-field absence + unfilled ODP placeholders.
+
+    Phase II FR-XA-02 — inheritance-aware: when a control narrative is an
+    inheritance claim (e.g. "AC-2 is inherited from Azure AD's SOC 2 Type II
+    audit"), we don't expect the team to provide local implementation
+    details. Instead:
+      * Properly-attributed inheritance (provider + attestation) → skip the
+        normal required-fields check (no false positive on the implementation).
+      * Incomplete inheritance (missing provider OR attestation) → emit a
+        focused finding telling the team exactly what attribution to add.
+    """
+    # Lazy import to keep the module's import graph tight in tests.
+    from backend.services.analysis.inheritance import detect_inheritance
+
     by_control = _segments_by_control(segments)
     findings: list[Finding] = []
     odp_patterns = [p.lower() for p in rubric.odp_unfilled_patterns]
@@ -171,6 +184,53 @@ def check_required_fields(
         narrative = max(segs, key=lambda s: len(s.text))
         span = _span_for(narrative)
 
+        # ── Phase II FR-XA-02: inheritance pattern detection ─────────────── #
+        inheritance = detect_inheritance(combined)
+        if inheritance is not None:
+            if inheritance.is_complete:
+                # Properly attributed — the team's responsibility is the
+                # attribution itself, not the local implementation. Skip the
+                # implementation checks; Tier 2 can still examine wording.
+                continue
+            # Incomplete: helpful, focused finding citing exactly what's missing.
+            missing = inheritance.missing_elements
+            attribution = []
+            if inheritance.provider:    attribution.append(f"provider: {inheritance.provider}")
+            if inheritance.attestations: attribution.append(f"attestation(s): {', '.join(inheritance.attestations)}")
+            rationale_attrib = " · ".join(attribution) if attribution else "no attribution parsed"
+            findings.append(
+                _make_finding(
+                    run_id, control_id, FindingType.insufficient_evidence,
+                    recommendation=(
+                        f"{control_id} is claimed as inherited but the attribution is incomplete. "
+                        f"Add: {', '.join(missing)}."
+                    ),
+                    rationale=(
+                        f"{control_id} narrative invokes inheritance ('{inheritance.trigger}') "
+                        f"but {rationale_attrib}. Inherited controls require both a provider "
+                        f"and a recognized attestation (SOC 2 / FedRAMP ATO / Type II / ISO 27001 / etc.)."
+                    ),
+                    spans=[span], catalog=catalog, rubric=rubric,
+                    missing_elements=missing,
+                )
+            )
+            # Still run the ODP-placeholder check on inherited claims — the
+            # attribution text itself can have unfilled placeholders.
+            hit = next((p for p in odp_patterns if p in combined_l), None)
+            if hit:
+                holder = next((s for s in segs if hit in s.text.lower()), narrative)
+                findings.append(
+                    _make_finding(
+                        run_id, control_id, FindingType.insufficient_evidence,
+                        recommendation=f"Fill the organization-defined parameter for {control_id} (found placeholder '{hit}').",
+                        rationale=f"{control_id} contains an unfilled organization-defined parameter ('{hit}').",
+                        spans=[_span_for(holder)], catalog=catalog, rubric=rubric,
+                        missing_elements=["organization_defined_parameter"],
+                    )
+                )
+            continue   # don't run the "required local implementation fields" check on inherited controls
+
+        # ── Standard local-implementation checks ─────────────────────────── #
         # (a) unfilled ODP placeholders (C3, deterministic) — cite the segment that holds it.
         hit = next((p for p in odp_patterns if p in combined_l), None)
         if hit:

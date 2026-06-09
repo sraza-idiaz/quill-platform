@@ -125,6 +125,141 @@ Where AXO already solves a problem (auth/JWT roles, provenance service, audit se
 
 ---
 
+## 3.5 GitOps & Attestation Architecture
+
+> GitOps is not an ops convenience for QUILL — it is the **mechanism** that makes the human-attestation gate and the tamper-proof audit trail real, verifiable, and air-gap-capable. The declared state of the system lives in Git; every change is a reviewed, cryptographically signed commit; the running service reconciles to whatever Git says. This reuses AXO's proven pattern (PR-like Change Requests + `git_signer` + provenance + audit) repointed from infrastructure to documentation review.
+
+### 3.5.1 What lives in Git (the "declared state")
+Four repositories (or four scoped paths in one repo), each schema-driven:
+
+| Repo / path | Contents | Why GitOps |
+|---|---|---|
+| `quill-config` | Control catalogs (SP 800-53 Rev.5 OSCAL), 800-53A sufficiency rubric, finding-type defs, severity thresholds, **circuit-breaker value (3)**, model-tier config | Every threshold change is a visible, reviewed diff — the "breaker silently set to 999" class of bug becomes un-shippable |
+| `quill-findings` | Each AI finding + its evidence span + its human attestation decision (approve/edit/reject) | The attestation gate *is* a signed PR review; the commit history *is* the audit trail |
+| `quill-artifacts` | **Signed hashes + metadata** of artifacts under review (NOT raw CUI bytes by default) | Integrity + provenance without leaking CUI; raw bytes stay in the local encrypted store |
+| `quill-policy` | Roles (incl. `attester`), who may attest which packages, export formats | Authority structure is explicit, reviewable, and versioned |
+
+### 3.5.2 The five-layer adoption path (sequenced; prove each before the next)
+1. **Config as code** — move every catalog/rubric/threshold into `quill-config`; the service reads from Git, never hardcoded. Cheapest, highest-leverage step.
+2. **Attestation as Pull Requests** — every finding is a proposed change to the package's review state; a named human reviews the finding↔source-span diff and approves/edits/rejects via a **GPG-signed commit**. Reuse AXO `change_request_service` + `git_signer`.
+3. **Signed provenance + audit = Git history** — Git's parent-hash chain + GPG signatures give a tamper-evident, integrity-verifiable ledger for free. `/audit/verify-integrity` becomes "verify the signed commit chain."
+4. **Storage backend abstraction** — reuse the Healing-Graph `GitHubStorageAdapter` / `LocalFileSystemStorageAdapter` / `GitLabStorageAdapter` interface. **Air-gap mode runs against a local bare Git repo or on-prem GitLab — zero internet, zero egress.**
+5. **Reconciliation loop** — a controller watches the repo; merged config/policy PRs trigger a reload; findings/attestations are committed back. Optional CI runs Tier 0 deterministic checks on every artifact commit automatically.
+
+### 3.5.3 Non-negotiable GitOps rules
+- **No raw CUI in any shared/remote repo.** Default: store signed hashes + metadata in Git, keep artifact bytes in the local encrypted store. Alternative: keep the entire repo local/air-gapped. **Decide explicitly and log in `DECISIONS.md`** — assessors will ask.
+- **Every state-changing commit is GPG-signed by a named identity.** Unsigned commits are rejected by a server-side hook.
+- **Air-gap mode makes zero outbound calls** — local bare repo / on-prem GitLab only; the cloud storage adapter is disabled.
+- **Reconcile, don't mutate.** The running service never writes config state except by committing through the reviewed flow.
+- **Reproducibility:** any reviewer can `git checkout` the exact catalog/rubric/model-config state at the moment a finding was produced; bad rubric batches are fixed with `git revert`.
+
+### 3.5.4 AXO module reuse map (don't reinvent)
+| QUILL need | Reuse from AXO |
+|---|---|
+| PR-like attestation review | `change_request_service.py` (CR workflow engine) |
+| Signed commits | `git_signer.py` (GPG signing service) |
+| Repo sync daemon | `git_sync.py` |
+| Storage adapters | Healing-Graph `GitHubStorageAdapter` / `LocalFileSystemStorageAdapter` |
+| Provenance chain | `provenance_service.py` |
+| Tamper-proof audit + integrity verify | `audit_service.py` + `/audit/verify-integrity` |
+| GitLab client | `gitlab_service.py` |
+
+### 3.5.5 Benefits (why this is the feasibility differentiator)
+- **Satisfies the DLA topic's hardest requirements directly:** explicit human attestation, prevention of reliance on unreviewed AI output, findings traceable to source, and no alteration of RMF authority — all enforced by an industry-standard, cryptographically verifiable mechanism rather than a custom claim.
+- **Tamper-evidence for free** via Git's hash chain + GPG; verifiable by anyone with `git log --show-signature`.
+- **Native air-gap / CUI handling** via local-repo mode — preserves the non-negotiable no-egress principle.
+- **Reproducibility & rollback** of the exact config state behind any finding — critical for defending findings and for Phase II config-correlation.
+- **Low Phase I cost** through heavy reuse of AXO modules — concrete de-risking for a $100K/12-month effort.
+- **Clean multi-program scaling (Phase II):** branch/repo per program, per-tenant isolation via repo scoping, PR review per authorizing official.
+
+---
+
+## 3.6 Extensibility & API Surface
+
+> How new data sources, artifact types, and even new analysis *domains* plug in without re-architecting. This is the answer to “could the reasoning engine be swapped for a different domain?” — yes, by design.
+
+### 3.6.1 Adapter layer (ingest extensibility)
+All inputs enter through a normalized adapter interface (inherited from AXO's `BaseAdapter` pattern). Each adapter converts a source into the common internal representation; the engine never talks to a source directly.
+
+```
+BaseAdapter (ABC)
+  .fetch()      -> raw source payload
+  .normalize() -> NormalisedArtifact | NormalisedSignal
+  .source_id, .capabilities
+```
+- **QUILL artifact adapters (today):** PDF, DOCX, Markdown, OSCAL (SSP/component-definition JSON).
+- **AXO operational adapters (reused heritage):** ScienceLogic SL1, FleetDM, ConnectWise.
+- **Adding a new source** = implement one adapter against the interface; no engine changes. New threat-intel or framework feeds (§3.9) would be new adapters.
+
+### 3.6.2 Reasoning engine is domain-agnostic
+The tiered engine (§2.6) is parameterized by **config + rubric**, not hardcoded logic. The same pipeline does AXO healing (“propose remediation”) and QUILL pre-adjudication (“score evidence sufficiency, emit findings”) by swapping:
+- the **catalog** (`catalog.yaml` / OSCAL) — what's being checked,
+- the **rubric** (`rubric.yaml`) — how sufficiency/decision is scored,
+- the **finding/action types** (`finding-types.yaml`) — what the engine emits.
+Swapping domains means swapping config, not rewriting the engine — QUILL itself is the proof.
+
+### 3.6.3 API surface (API-first)
+Every capability is exposed through the API; the desktop UI, Slack bot, and external integrations all use it.
+- **REST (FastAPI):** `/ingest`, `/analysis`, `/findings`, `/attestation`, `/audit`, `/exports`, `/admin`. Interactive OpenAPI/Swagger docs at `/docs`.
+- **MCP server:** the same queries exposed as MCP tools for agentic/LLM consumers.
+- **Auth:** JWT, roles `admin / engineer / viewer / attester`; tenant isolation.
+- “If it's not in the API, it doesn't exist” — no capability is UI-only.
+
+---
+
+## 3.7 Approval Metadata Schema (audit & evidence)
+
+> Exactly what every human decision captures — answers “who approved, when, why, with what justification?” Each attestation is a cryptographically signed, tamper-evident record in the hash-chained audit ledger (§3.5).
+
+**`attestation` record fields:**
+| Field | Meaning |
+|---|---|
+| `finding_id` / `run_id` / `artifact_id` | what was decided, and on which analysis run |
+| `attester` (identity) | named human (JWT identity); never anonymous |
+| `role` | must be `attester` (or admin); enforced |
+| `decision` | `approved` \| `edited` \| `rejected` |
+| `justification` | free-text reasoning / change rationale |
+| `original_ai_finding` | preserved verbatim (AI's pre-human output) |
+| `edited_content` | if edited, the human's revised text |
+| `signed_at` | UTC timestamp |
+| `signature` | GPG (prod) / HMAC (dev) signature over the record |
+| `prev_hash` / `record_hash` | SHA-256 hash-chain links (tamper evidence) |
+
+Nothing is treated as authoritative until this record exists. `/audit/verify-integrity` walks the chain and verifies every signature.
+
+### 3.7.1 Domain-specific exports
+From the same signed record set, QUILL renders:
+- **Signed human-readable findings report** (PDF/MD) — today.
+- **OSCAL-style POA&M** of open findings — today.
+- **Integrity-verifiable audit artifact** — today.
+- **Templated renderings** (RMF change summaries, compliance narratives, incident/response timelines) — formatted off the same records to a requester's spec. The records carry all needed metadata; new formats are export templates, not new data capture.
+
+---
+
+## 3.8 Feedback Loop & Model Improvement
+
+> How wrong/low-value AI output is corrected over time — without ever letting unreviewed AI output through.
+
+- Every human **attest / edit / reject** decision is captured against the AI's original finding (§3.7). This labeled stream *is* the improvement dataset.
+- **Rubric tuning (near-term):** rejected/edited findings surface false-positive and miscalibration patterns; the sufficiency rubric and confidence thresholds are adjusted in `rubric.yaml` / `thresholds.yaml` (versioned via GitOps, §3.5).
+- **Calibration monitoring:** the eval harness tracks recall, false-positive rate, traceability, and confidence calibration (ECE) against a labeled ground-truth set on each change.
+- **Fine-tuning (deferred):** local-model fine-tuning is intentionally **deferred until enough real attested decisions are logged** (inherited principle). No fine-tuning on synthetic-only data.
+- **High-risk / out-of-policy handling:** out-of-policy, contradictory, or low-confidence LLM output never executes — the circuit breaker (threshold 3) routes the artifact to human review; findings stay `unattested` until signed.
+
+---
+
+## 3.9 Scope Boundaries (explicit)
+
+> Stated plainly so the spec, the product, and external conversations agree.
+
+**In scope (Phase I, built/specified):** artifact ingestion (PDF/DOCX/MD/OSCAL); SP 800-53 Rev.5 + 800-53A analysis; tiered T0–T2 engine; confidence-scored findings with source spans; signed human-attestation gate; tamper-evident audit; signed report + OSCAL POA&M export; desktop UI; Slack basics.
+
+**Roadmap (architecturally supported, NOT wired up today):** ingesting **threat-intelligence** feeds (MITRE ATT&CK, vulnerability databases, Recorded Future) and **additional compliance frameworks** (NIST CSF, ISO 27001, SOC 2) — the adapter layer (§3.6.1) and framework-agnostic catalog model make these new adapters/catalogs, not re-architecture. Tier 3 cloud escalation is opt-in and off by default.
+
+**Out of scope (not pursued by design):** QUILL does **not** orchestrate offensive/penetration-testing tooling (Nmap, Metasploit, Burp, Qualys) and does **not** simulate attack chains. That is outside both AXO's (self-healing remediation) and QUILL's (compliance documentation analysis) intent. QUILL also never makes the authorization decision.
+
+---
+
 ## 4. Domain Model (data)
 
 Core tables (extend AXO's schema; reuse provenance/audit/change_request tables as-is):
@@ -166,7 +301,7 @@ Builds:
 Owns analysis quality. Builds the **rubric** (800-53A determination-statement → sufficiency scoring), prompt templates, confidence calibration, and the **evaluation harness**: labeled ground-truth set of known deficiencies; metrics (recall, false-positive rate, traceability 100%, confidence calibration). Defines success thresholds (see §8). Reuses the "log real decisions, defer fine-tuning until data exists" principle — no fine-tuning until attested-finding data accumulates.
 
 ### 5.5 Frontend Designer Agent
-Produces `DESIGN_SPEC.md` using the **QUILL brand guide** (light-green palette `#6fcf97`, Syne/DM Mono/Instrument Serif, 8-bit owl mascot + status states, dark-mode-first). Wireframes for: artifact upload/queue, analysis run view, **finding review + attestation** screen (the heart of the product — source text on one side, finding+confidence on the other, approve/edit/reject), audit/provenance viewer, export screen, settings/integrations. Accessibility + reduced-motion required.
+Produces `DESIGN_SPEC.md` using the **QUILL brand guide** (light-green palette `#29b5e8`, Syne/DM Mono/Instrument Serif, 8-bit owl mascot + status states, dark-mode-first). Wireframes for: artifact upload/queue, analysis run view, **finding review + attestation** screen (the heart of the product — source text on one side, finding+confidence on the other, approve/edit/reject), audit/provenance viewer, export screen, settings/integrations. Accessibility + reduced-motion required.
 
 ### 5.6 Frontend Developer Agent
 Builds the UI in AXO's React/Tauri app as a new QUILL section (or standalone, architect's call). Source-span highlighting that maps a finding to the exact quoted text; confidence/severity chips using the semantic color system; attestation actions wired to the signed Change-Request flow; provenance/audit timeline reuse from AXO components.
@@ -246,13 +381,14 @@ In scope: productized deployment (SaaS + on-prem + air-gap); multi-framework cat
 
 ## 7. Cross-Cutting Requirements — Every Agent Respects These
 
-- **Brand:** QUILL brand guide — light-green palette (`#6fcf97` primary, `#a8e6c1` accent, `#ff7a6b` alarm), Syne/DM Mono/Instrument Serif, 8-bit owl mascot + four status states (Idle/Reading/Alarm/Attested), dark-mode-first, semantic finding-status colors.
+- **Brand:** QUILL brand guide — light-green palette (`#29b5e8` primary, `#7fd3f2` accent, `#ff7a6b` alarm), Syne/DM Mono/Instrument Serif, 8-bit owl mascot + four status states (Idle/Reading/Alarm/Attested), dark-mode-first, semantic finding-status colors.
 - **Reuse AXO platform:** shared `/quill-platform/` structure mirroring `/msp-platform/`, shared JWT auth + roles, shared provenance/audit/Change-Request services, settings integration card, MERP nav.
 - **Never automate authorization:** no agent builds logic that recommends or implements an authorize/deny decision. QUILL informs.
 - **Traceability is mandatory:** any finding without a valid in-document source span is a bug.
 - **Local-first / air-gap:** zero artifact data egress in air-gap mode; T3 cloud path opt-in and disabled in air-gap.
 - **CMMC L2 (Self) + ITAR:** treat sandbox artifacts as CUI; document handling; disclose any foreign nationals per topic §3.5.
 - **Slack bot is first-class.**
+- **GitOps-backed attestation (§3.5):** declared state lives in Git; every attestation is a GPG-signed commit; the audit trail is the signed commit chain; air-gap mode uses a local bare repo with zero egress; no raw CUI in any shared repo.
 
 ---
 
@@ -268,6 +404,9 @@ In scope: productized deployment (SaaS + on-prem + air-gap); multi-framework cat
 - [ ] Circuit breaker set to **3** (not 999); trips to human review on low-confidence/contradiction storms
 - [ ] No finding is authoritative until a named human approves/edits/rejects it (signed)
 - [ ] Provenance chain + tamper-proof audit trail record every action; integrity verifiable
+- [ ] **GitOps:** config/rubric/threshold live in `quill-config` (read from Git, not hardcoded); circuit-breaker value is a reviewed diff
+- [ ] **GitOps:** every attestation is a GPG-signed commit; unsigned commits rejected; `git log --show-signature` verifies the chain
+- [ ] **GitOps:** air-gap mode runs against a local bare repo / on-prem GitLab with zero outbound calls; no raw CUI in any shared repo (signed hashes + metadata only)
 - [ ] Desktop UI shows source text ↔ finding with highlighting; approve/edit/reject works
 - [ ] Signed export produces human report + OSCAL POA&M + audit artifact
 - [ ] Slack: status / findings / attest / health + file upload
@@ -332,6 +471,83 @@ Trade-offs accepted:
 ```
 
 Log every significant decision in this format. Future engineers will thank you.
+
+---
+
+## 11. Branding & Brand Guide
+
+> QUILL is one product in the MERP suite and must look and sound like a sibling of AXO (Axo), Remi, and Otto. The canonical, full brand guide is `QUILL_Brand_Guide.md`; the interactive reference is `quill-branding.html`. This section embeds the essentials so the build doc is self-contained. Every UI/Slack/export/marketing surface follows it.
+
+### 11.1 Name & identity
+- **Product:** QUILL — the wise reviewer.
+- **Mascot:** a small, intelligent **owl** (wisdom + discernment). "Quill" is also the pen of the record and the sign-off — name and function are one.
+- **Backronym:** **Q**uality **U**nderwriting for **I**mplementation, **L**ineage & **L**edger.
+- **Tagline:** "every finding, signed off."
+- **Writing:** always all-caps **QUILL** in body/wordmark; lowercase `quill` only in the compact logo lockup.
+
+### 11.2 Character family (matches AXO's character-concept pattern)
+QUILL follows AXO's mascot convention: a flat 8-bit pixel sprite + a signature prop + a short "character note." It sits beside the established cast:
+
+| Mascot | Animal | Signature prop / note | Role | Accent |
+|---|---|---|---|---|
+| **Axo** | Axolotl | Feathery gills glow when fixing; smiles when healthy | Self-healing | `#00e896` |
+| **Remi** | Raccoon | Tiny wrench; night-vision goggles when working late | (AXO ops) | `#9aa3b0` |
+| **Otto** | Otter | Holds a "favourite rock" diagnostic tool; floats when idle | Patching | `#52a8ff` |
+| **PRISM** | Owl (vigil) | Watches live telemetry | Observability | `#9b86ff` |
+| **AEGIS** | Hedgehog | Curls defensively | Security | `#ff82c5` |
+| **COOP** | Raccoon | Continuity / DR | Continuity | `#ff7a52` |
+| **QUILL** | **Owl (scholar)** | **Holds a quill pen; wears small round glasses; raises a red “!” on a deficiency; green check when attested** | **RMF pre-adjudication** | **`#29b5e8`** |
+
+> **Two-owl note:** PRISM is a *vigil* owl (watching metrics); QUILL is a *scholar* owl (glasses + quill, light-green, reading documents). Keep them visually distinct. WREN (inspector bird) is the approved fallback if full separation is ever required.
+
+### 11.3 Mascot states (drive system status in UI + Slack)
+| State | Sprite | Product event | Motion |
+|---|---|---|---|
+| **Idle** | calm, eyes at rest | ingestion idle / queue clear | gentle float |
+| **Reading** | glasses on, studying a scroll | analysis running | steady / subtle scan |
+| **Alarm** | ears perked, wide eyes, red “!” | a finding/deficiency emitted | quick pulse (~1.3s) |
+| **Attested** | happy smile + green check | a human signed a finding | soft float/settle |
+
+Asset files: `owl_sprite_axo.png` (mascot), `owl_sprite_icon.png` (head icon), `state_idle.png`, `state_reading.png`, `state_alarm.png`, `state_attested.png`.
+
+### 11.4 Color palette (sky-blue system (Snowflake-inspired); dark-mode first)
+| Token | Hex | Role |
+|---|---|---|
+| `--bg` | `#0a1016` | Background (green-tinted near-black) |
+| `--surface` | `#10202b` | Cards / panels |
+| `--border` | `#1c3242` | Hairlines |
+| `--text` | `#eaf3fb` | Primary text |
+| `--muted` | `#7f95a6` | Secondary text |
+| `--quill` (primary) | `#29b5e8` | Sky blue — primary brand color |
+| `--quill-2` (accent) | `#7fd3f2` | Soft light-sky — highlights/gradients |
+| `--light-sky-pale` | `#cdeefb` | Palest light-sky fills |
+| `--alarm` | `#ff7a6b` | Coral-red — deficiencies/alerts ONLY |
+| `--cream` | `#cfeafb` | Owl belly / warm neutral |
+
+**Semantic finding-status colors (use consistently in UI):** satisfied = light-sky `#7fd3f2`; other-than-satisfied (weak) = green `#29b5e8`; missing = coral-red `#ff7a6b`; awaiting human attestation = pale `#cfeafb`; n/a = muted `#717a86`.
+Deliberately distinct from AXO (pink/teal: `Axo — Bioluminescent`, `Midnight Ops`, `Warm Terminal`) and AEGIS (magenta). Coral-red is never decorative. Maintain WCAG AA contrast; never light-green text on light-green fills.
+
+### 11.5 Typography (shared with the MERP suite — do not substitute)
+- **Display / wordmark / headlines / finding titles:** **Syne** ExtraBold (tracking -0.02 to -0.04em).
+- **UI / data / control IDs / confidence / timestamps:** **DM Mono** (e.g., `AC-2 · 0.92`).
+- **Editorial / taglines / voice:** **Instrument Serif** Italic.
+- Web import: `https://fonts.googleapis.com/css2?family=Syne:wght@400..800&family=DM+Mono:wght@300..500&family=Instrument+Serif:ital@0;1&display=swap`
+
+### 11.6 Motion & voice
+- **Motion:** artifact scan-line (Reading, ~2s ease-in-out); finding pulse (Alarm, coral, ~1.3s); attestation gate (three dots: finding → human → signed). Respect `prefers-reduced-motion`.
+- **Voice:** calm, exact, trustworthy — the tool advises; the human decides. Never use "approves"/"authorizes" for QUILL itself; use "flags"/"recommends." Findings stated factually: `MISSING EVIDENCE · AC-6(9) · conf 0.88 — SSP §4.2 · awaiting human attest`.
+- Alternate taglines: "QUILL flags it. You sign it." / "fewer rejections, faster reviews." / "every finding points to a line."
+
+### 11.7 Logo marks
+- **OFFICIAL (primary):** forward-facing **robotic 16×16 pixel owl sprite**, built on the same grid/structure as the AXO axolotl logo (sibling family). Files: `quill-owl-icon.svg` (square — app icon/favicon/Slack avatar), `quill-owl-horizontal.svg` (icon + lowercase `quill` wordmark — top nav/login). True vector, `crispEdges`. Use everywhere by default.
+- **Secondary (optional):** audit-ring + nib (monochrome-safe, tiny sizes); pen-stroke check (document footers).
+- Clear space ≥ one ear-tuft height; below 32 px use the secondary ring mark.
+
+### 11.8 Build rules for agents
+- Frontend uses these tokens, fonts, mascot, and states; reuse AXO's `SignatureBadge.jsx` / `AuditTimeline.jsx` and status-dot components.
+- Slack bot uses the mascot states as status glyphs and the semantic colors in Block Kit.
+- Signed exports/reports carry the QUILL wordmark + primary `#29b5e8`.
+- The canonical source of truth is `QUILL_Brand_Guide.md`; if this section and the guide ever differ, the guide wins.
 
 ---
 

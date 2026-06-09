@@ -18,7 +18,10 @@ distinctly from artifact spans.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.services.analysis.synonyms import Synonyms
 
 import hashlib
 import re
@@ -200,21 +203,43 @@ def check_required_fields(
 
 
 def check_cross_artifact_consistency(
-    run_id: str, segments: list[NormalizedSegment], catalog: Catalog, rubric: Rubric
+    run_id: str, segments: list[NormalizedSegment], catalog: Catalog, rubric: Rubric,
+    synonyms: Optional["Synonyms"] = None,
 ) -> list[Finding]:
-    """FR-T0-03: same control, conflicting frequency values across artifacts."""
+    """FR-T0-03 + FR-XA-01/05/06 — same control, conflicting normalized values
+    across artifacts.
+
+    Two channels feed the comparison:
+      1. Raw frequency-token regex (`FREQ_RE`) — catches phrases the synonym
+         table doesn't recognize.
+      2. The synonym table's `find_canonical_phrases` — normalizes equivalents
+         like "every 90 days" ↔ "quarterly" and "ISSO" ↔ "Information System
+         Security Officer", so trivial surface differences don't trigger
+         false-positive contradictions.
+
+    Findings are emitted only when at least one artifact disagrees with another
+    on a *normalized* value set.
+    """
     findings: list[Finding] = []
-    # control_id -> { artifact_id -> set(freq tokens) }
+    # control_id -> { artifact_id -> set(canonical tokens) }
     by_control: dict[str, dict[str, set[str]]] = {}
     span_by: dict[tuple[str, str], EvidenceSpan] = {}
     for s in segments:
         if not s.control_hint:
             continue
-        freqs = {m.lower().replace("yearly", "annually") for m in FREQ_RE.findall(s.text)}
-        # findall returns the captured group; normalize tuples->str handled by regex single group
-        freqs = {f if isinstance(f, str) else f[0] for f in freqs}
-        if freqs:
-            by_control.setdefault(s.control_hint, {}).setdefault(s.artifact_id, set()).update(freqs)
+        tokens: set[str] = set()
+        # Channel 1: legacy frequency regex (kept so unknown phrases still surface).
+        for m in FREQ_RE.findall(s.text):
+            tok = (m if isinstance(m, str) else m[0]).lower().replace("yearly", "annually")
+            # Canonicalize via the synonym table when possible.
+            if synonyms is not None:
+                tok = synonyms.canonical(tok)
+            tokens.add(tok)
+        # Channel 2: synonym table catches phrases the regex doesn't (e.g. "every 90 days").
+        if synonyms is not None:
+            tokens.update(synonyms.find_canonical_phrases(s.text))
+        if tokens:
+            by_control.setdefault(s.control_hint, {}).setdefault(s.artifact_id, set()).update(tokens)
             span_by.setdefault(
                 (s.control_hint, s.artifact_id),
                 EvidenceSpan(artifact_id=s.artifact_id, locator=s.locator,
@@ -229,8 +254,11 @@ def check_cross_artifact_consistency(
             findings.append(
                 _make_finding(
                     run_id, control_id, FindingType.inconsistent,
-                    recommendation=f"Reconcile conflicting frequency values for {control_id} across artifacts.",
-                    rationale=f"{control_id} states conflicting frequencies across artifacts ({detail}).",
+                    recommendation=f"Reconcile conflicting values for {control_id} across artifacts.",
+                    rationale=(
+                        f"{control_id} states conflicting values across artifacts after "
+                        f"synonym normalization ({detail})."
+                    ),
                     spans=spans, catalog=catalog, rubric=rubric,
                 )
             )
@@ -240,15 +268,22 @@ def check_cross_artifact_consistency(
 def run_tier0(
     run_id: str, segments: list[NormalizedSegment], catalog: Catalog, rubric: Rubric,
     baseline: Optional[str] = None,
+    synonyms: Optional["Synonyms"] = None,
 ) -> list[Finding]:
     """Run all Tier 0 checks. Deterministic order (FR-T0-05).
 
-    `baseline` overrides catalog.baseline so per-program baselines work
-    (Phase II FR-MT-01 / FR-CAT-05). When omitted, the catalog default applies.
+    `baseline`  overrides catalog.baseline so per-program baselines work
+                (Phase II FR-MT-01 / FR-CAT-05). When omitted, the catalog
+                default applies.
+    `synonyms`  enables FR-XA-01/05/06 — equivalent expressions normalize to
+                a single canonical form before cross-artifact comparison.
+                When omitted, only the legacy frequency regex is used.
     """
     findings: list[Finding] = []
     findings += check_coverage(run_id, segments, catalog, rubric, baseline=baseline)
     findings += check_required_fields(run_id, segments, catalog, rubric)
-    findings += check_cross_artifact_consistency(run_id, segments, catalog, rubric)
+    findings += check_cross_artifact_consistency(
+        run_id, segments, catalog, rubric, synonyms=synonyms,
+    )
     findings.sort(key=lambda f: (f.control_id, f.type.value, f.id))
     return findings

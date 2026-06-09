@@ -14,7 +14,10 @@ from __future__ import annotations
 import logging
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.services.analysis.synonyms import Synonyms
 
 from backend.models.domain import (
     Artifact,
@@ -41,11 +44,13 @@ logger = logging.getLogger("quill.orchestrator")
 
 class Orchestrator:
     def __init__(self, repo: InMemoryRepository, catalog: Catalog, rubric: Rubric,
-                 analyzer: Optional[Analyzer] = None):
+                 analyzer: Optional[Analyzer] = None,
+                 synonyms: Optional["Synonyms"] = None):
         self.repo = repo
         self.catalog = catalog
         self.rubric = rubric
         self.analyzer = analyzer  # None -> Tier 2 skipped (degraded)
+        self.synonyms = synonyms  # Phase II FR-XA-01/05/06 — optional, degrades when None
 
     async def analyze_package(self, items: list[tuple[Artifact, Path]],
                               tenant: str = "default",
@@ -89,7 +94,8 @@ class Orchestrator:
         breaker = CircuitBreaker(self.rubric.circuit_breaker_threshold)
         all_findings: list[Finding] = []
 
-        t0 = run_tier0(run.id, all_segments, self.catalog, self.rubric, baseline=active_baseline)
+        t0 = run_tier0(run.id, all_segments, self.catalog, self.rubric,
+                       baseline=active_baseline, synonyms=self.synonyms)
         all_findings += t0
         run.tier_path.append(Tier.t0)
 
@@ -158,7 +164,8 @@ class Orchestrator:
         all_findings: list[Finding] = []
 
         # Tier 0 — deterministic, using the per-program baseline
-        t0 = run_tier0(run.id, segments, self.catalog, self.rubric, baseline=active_baseline)
+        t0 = run_tier0(run.id, segments, self.catalog, self.rubric,
+                       baseline=active_baseline, synonyms=self.synonyms)
         all_findings += t0
         run.tier_path.append(Tier.t0)
 

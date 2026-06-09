@@ -1,0 +1,147 @@
+# Phase II — Synonym resolution table (FR-XA-01 / FR-XA-05 / FR-XA-06).
+#
+# Each "class" is a set of expressions that mean the same thing. The first
+# `canonical` form is what tier-0 uses when comparing values across artifacts.
+# Adding a member here is a config change — no code change needed.
+#
+# Conventions:
+#   - Members are matched case-insensitively as whole tokens / phrases.
+#   - Longer phrases ("every 90 days") are tried before shorter words so the
+#     greedy match wins.
+#   - Programs can extend per-program in admin UI later; this is the org-wide
+#     baseline.
+
+version: 1
+
+classes:
+  # ─── FREQUENCIES (used by cross-artifact consistency, Tier 0) ─────────── #
+  - name: freq_quarterly
+    canonical: quarterly
+    members:
+      - quarterly
+      - every quarter
+      - every 90 days
+      - every ninety days
+      - every 3 months
+      - every three months
+      - 90-day
+      - 90 day
+      - 90 days
+
+  - name: freq_annually
+    canonical: annually
+    members:
+      - annually
+      - yearly
+      - once a year
+      - every year
+      - every 12 months
+      - every twelve months
+      - every 365 days
+      - 365-day
+      - 1 year
+
+  - name: freq_biannually
+    canonical: biannually
+    members:
+      - biannually
+      - bi-annually
+      - semi-annually
+      - semiannually
+      - twice a year
+      - every six months
+      - every 6 months
+      - every 180 days
+
+  - name: freq_monthly
+    canonical: monthly
+    members:
+      - monthly
+      - every month
+      - every 30 days
+      - 30 days
+      - 30-day
+
+  - name: freq_weekly
+    canonical: weekly
+    members:
+      - weekly
+      - every week
+      - every 7 days
+      - 7-day
+      - 7 days
+
+  - name: freq_daily
+    canonical: daily
+    members:
+      - daily
+      - every day
+      - every 24 hours
+
+  # ─── ROLE NAMES (FR-XA-05) ────────────────────────────────────────────── #
+  # Normalizes "ISSO" / "Information System Security Officer" / etc. so that
+  # contradictions on "responsible role" don't false-positive across artifacts
+  # that use the abbreviation in one place and the long form in another.
+  - name: role_isso
+    canonical: ISSO
+    members:
+      - ISSO
+      - Information System Security Officer
+      - Information Systems Security Officer
+
+  - name: role_issm
+    canonical: ISSM
+    members:
+      - ISSM
+      - Information System Security Manager
+      - Information Systems Security Manager
+
+  - name: role_so
+    canonical: System Owner
+    members:
+      - System Owner
+      - System Owner (SO)
+      - SO
+
+  - name: role_ao
+    canonical: Authorizing Official
+    members:
+      - Authorizing Official
+      - AO
+      - DAA
+      - Designated Approving Authority
+
+  - name: role_ciso
+    canonical: CISO
+    members:
+      - CISO
+      - Chief Information Security Officer
+
+  # ─── AUTHENTICATOR TYPES (FR-XA-06 — ODP value family) ────────────────── #
+  - name: auth_piv
+    canonical: PIV
+    members:
+      - PIV
+      - PIV card
+      - Personal Identity Verification
+      - Personal Identity Verification card
+      - smart card (PIV)
+
+  - name: auth_cac
+    canonical: CAC
+    members:
+      - CAC
+      - Common Access Card
+      - DoD CAC
+
+  - name: auth_mfa
+    canonical: MFA
+    members:
+      - MFA
+      - multi-factor authentication
+      - multifactor authentication
+      - two-factor authentication
+      - 2FA
+      - TOTP
+      - one-time password
+      - OTP

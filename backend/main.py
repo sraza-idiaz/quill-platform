@@ -26,6 +26,7 @@ from backend.services.audit_service import AuditLedger
 from backend.services.provenance_service import ProvenanceLedger
 from backend.services.change_request_service import ChangeRequestService
 from backend.services.gpg_signer import Signer, make_default_signer
+from backend.services.analysis.synonyms import Synonyms, load_synonyms
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("quill")
@@ -43,6 +44,7 @@ class QuillContext:
     provenance: ProvenanceLedger
     cr_service: ChangeRequestService
     signer: Signer
+    synonyms: Synonyms
     air_gap: bool = True
     tmp_paths: dict[str, str] = field(default_factory=dict)
 
@@ -64,6 +66,9 @@ def build_context(analyzer: Optional[Analyzer] = None, config_path: Optional[Pat
     cfg = yaml.safe_load(chosen.read_text())
     catalog = load_catalog(ROOT / cfg.get("catalog_path", "config/catalog.yaml"))
     rubric = load_rubric(ROOT / cfg.get("rubric_path", "config/rubric.yaml"))
+    # Phase II — load the synonym table (FR-XA-01/05/06). Path is optional;
+    # missing file yields an empty table and the pipeline degrades gracefully.
+    synonyms = load_synonyms(ROOT / cfg.get("synonyms_path", "config/synonyms.yaml"))
     repo = InMemoryRepository()
 
     # Env-var overrides (used by deployed environments like Render).
@@ -72,7 +77,7 @@ def build_context(analyzer: Optional[Analyzer] = None, config_path: Optional[Pat
     if analyzer is None and cfg.get("ollama") and enable_t2:
         analyzer = OllamaAnalyzer(cfg["ollama"]["host"], cfg["ollama"]["model"])
 
-    orch = Orchestrator(repo, catalog, rubric, analyzer=analyzer)
+    orch = Orchestrator(repo, catalog, rubric, analyzer=analyzer, synonyms=synonyms)
     signer = signer or make_default_signer()
     audit = AuditLedger()
     provenance = ProvenanceLedger(signer)
@@ -84,6 +89,7 @@ def build_context(analyzer: Optional[Analyzer] = None, config_path: Optional[Pat
     return QuillContext(
         repo=repo, catalog=catalog, rubric=rubric, orchestrator=orch,
         audit=audit, provenance=provenance, cr_service=cr_service, signer=signer,
+        synonyms=synonyms,
         air_gap=air_gap,
     )
 

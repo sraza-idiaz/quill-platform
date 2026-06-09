@@ -13,7 +13,8 @@ from __future__ import annotations
 import datetime as dt
 from typing import Optional, Protocol
 
-from backend.models.domain import Artifact, Finding, Program, ProgramStatus, Run
+from backend.models.domain import (Artifact, Finding, Package, PackageStatus,
+                                    Program, ProgramStatus, Run)
 
 
 class Repository(Protocol):
@@ -21,6 +22,14 @@ class Repository(Protocol):
     async def save_program(self, program: Program) -> Program: ...
     async def get_program(self, program_id: str) -> Optional[Program]: ...
     async def list_programs(self) -> list[Program]: ...
+
+    # Phase II — packages
+    async def save_package(self, package: Package) -> Package: ...
+    async def get_package(self, package_id: str, tenant: str) -> Optional[Package]: ...
+    async def list_packages(self, tenant: str) -> list[Package]: ...
+    async def update_package_status(self, package_id: str, tenant: str,
+                                    status: PackageStatus) -> None: ...
+    async def list_artifacts_in_package(self, package_id: str, tenant: str) -> list[Artifact]: ...
 
     async def save_artifact(self, artifact: Artifact) -> Artifact: ...
     async def get_artifact(self, artifact_id: str, tenant: str) -> Optional[Artifact]: ...
@@ -41,6 +50,7 @@ class InMemoryRepository:
 
     def __init__(self) -> None:
         self._programs: dict[str, Program] = {}
+        self._packages: dict[tuple[str, str], Package] = {}        # (tenant, package_id)
         self._artifacts: dict[tuple[str, str], Artifact] = {}
         self._runs: dict[tuple[str, str], Run] = {}
         self._findings: dict[tuple[str, str], Finding] = {}
@@ -65,6 +75,38 @@ class InMemoryRepository:
 
     async def list_programs(self) -> list[Program]:
         return sorted(self._programs.values(), key=lambda p: (p.status.value, p.name.lower()))
+
+    # -- packages (Phase II FR-PKG-*) -------------------------------------- #
+    async def save_package(self, package: Package) -> Package:
+        now = dt.datetime.now(dt.timezone.utc)
+        if package.created_at is None:
+            package.created_at = now
+        package.updated_at = now
+        self._packages[(package.tenant, package.id)] = package
+        return package
+
+    async def get_package(self, package_id: str, tenant: str) -> Optional[Package]:
+        return self._packages.get((tenant, package_id))
+
+    async def list_packages(self, tenant: str) -> list[Package]:
+        items = [p for (t, _), p in self._packages.items() if t == tenant]
+        # Sort: active (not archived) first, then most recently updated first.
+        return sorted(
+            items,
+            key=lambda p: (p.status == PackageStatus.archived,
+                           -(p.updated_at.timestamp() if p.updated_at else 0)),
+        )
+
+    async def update_package_status(self, package_id: str, tenant: str,
+                                    status: PackageStatus) -> None:
+        p = self._packages.get((tenant, package_id))
+        if p:
+            p.status = status
+            p.updated_at = dt.datetime.now(dt.timezone.utc)
+
+    async def list_artifacts_in_package(self, package_id: str, tenant: str) -> list[Artifact]:
+        return [a for (t, _), a in self._artifacts.items()
+                if t == tenant and a.package_id == package_id]
 
     # -- artifacts ---------------------------------------------------------- #
     async def save_artifact(self, artifact: Artifact) -> Artifact:

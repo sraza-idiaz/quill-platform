@@ -9,12 +9,14 @@ from __future__ import annotations
 import tempfile
 import uuid
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 
 from pydantic import BaseModel, Field
 
-from backend.models.domain import Artifact, ArtifactType, FindingStatus, Program, ProgramStatus
+from backend.models.domain import (Artifact, ArtifactType, FindingStatus, Package,
+                                    PackageStatus, PACKAGE_STATE_MACHINE, Program, ProgramStatus)
 from backend.services.auth import get_current_user, require_role
 from backend.services.change_request_service import AttestationError
 
@@ -105,6 +107,189 @@ async def get_program(program_id: str, request: Request, user=Depends(get_curren
     if not p:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "program not found")
     return p.model_dump(mode="json")
+
+
+# -- packages (Phase II — FR-PKG-*) ---------------------------------------- #
+
+
+class PackageCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    id: Optional[str] = Field(None, max_length=64,
+                              description="optional; defaults to PKG-YYYY-XXXX")
+    description: str = ""
+
+
+class PackageStatusUpdate(BaseModel):
+    status: str  # validated against PackageStatus enum + transition machine
+
+
+def _new_package_id() -> str:
+    """FR-PKG-06 — deterministic-looking PKG-YYYY-XXXXXX id."""
+    import datetime as _dt
+    year = _dt.datetime.now(_dt.timezone.utc).year
+    return f"PKG-{year}-{uuid.uuid4().hex[:6].upper()}"
+
+
+@router.get("/packages")
+async def list_packages(request: Request, user=Depends(get_current_user)):
+    ctx = _ctx(request)
+    pkgs = await ctx.repo.list_packages(user["tenant"])
+    out = []
+    for p in pkgs:
+        arts = await ctx.repo.list_artifacts_in_package(p.id, user["tenant"])
+        d = p.model_dump(mode="json")
+        d["artifact_count"] = len(arts)
+        out.append(d)
+    return out
+
+
+@router.post("/packages", status_code=status.HTTP_201_CREATED)
+async def create_package(body: PackageCreateRequest, request: Request,
+                         user=Depends(require_role("engineer", "admin"))):
+    ctx = _ctx(request)
+    pid = body.id or _new_package_id()
+    if not all(c.isalnum() or c in "-_" for c in pid):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "package id must be alphanumeric / hyphen / underscore only")
+    existing = await ctx.repo.get_package(pid, user["tenant"])
+    if existing:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"package '{pid}' already exists")
+    pkg = Package(id=pid, tenant=user["tenant"], name=body.name,
+                  description=body.description, status=PackageStatus.draft)
+    await ctx.repo.save_package(pkg)
+    ctx.audit.append(
+        tenant=user["tenant"], actor=user["user"], action="package.created",
+        target_type="package", target_id=pid,
+        metadata={"name": body.name},
+    )
+    return pkg.model_dump(mode="json")
+
+
+@router.get("/packages/{package_id}")
+async def get_package(package_id: str, request: Request, user=Depends(get_current_user)):
+    ctx = _ctx(request)
+    p = await ctx.repo.get_package(package_id, user["tenant"])
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+    arts = await ctx.repo.list_artifacts_in_package(package_id, user["tenant"])
+    out = p.model_dump(mode="json")
+    out["artifacts"] = [a.model_dump(mode="json") for a in arts]
+    return out
+
+
+@router.patch("/packages/{package_id}/status")
+async def set_package_status(package_id: str, body: PackageStatusUpdate, request: Request,
+                              user=Depends(require_role("engineer", "admin"))):
+    ctx = _ctx(request)
+    p = await ctx.repo.get_package(package_id, user["tenant"])
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+    try:
+        new_status = PackageStatus(body.status)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"invalid status: {body.status}")
+    if new_status not in PACKAGE_STATE_MACHINE.get(p.status, set()):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"illegal transition: '{p.status.value}' -> '{new_status.value}'"
+        )
+    await ctx.repo.update_package_status(package_id, user["tenant"], new_status)
+    ctx.audit.append(
+        tenant=user["tenant"], actor=user["user"], action="package.status_changed",
+        target_type="package", target_id=package_id,
+        metadata={"from": p.status.value, "to": new_status.value},
+    )
+    return {"id": package_id, "status": new_status.value}
+
+
+@router.post("/packages/{package_id}/artifacts/{artifact_id}")
+async def attach_artifact_to_package(package_id: str, artifact_id: str, request: Request,
+                                     user=Depends(require_role("engineer", "admin"))):
+    """FR-PKG-02 — attach an existing artifact to a package. Artifact and
+    package must be in the same tenant."""
+    ctx = _ctx(request)
+    pkg = await ctx.repo.get_package(package_id, user["tenant"])
+    if not pkg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+    if pkg.status == PackageStatus.archived:
+        raise HTTPException(status.HTTP_409_CONFLICT, "package is archived (read-only)")
+    art = await ctx.repo.get_artifact(artifact_id, user["tenant"])
+    if not art:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
+    art.package_id = package_id
+    await ctx.repo.save_artifact(art)
+    ctx.audit.append(
+        tenant=user["tenant"], actor=user["user"], action="package.artifact_attached",
+        target_type="package", target_id=package_id,
+        metadata={"artifact_id": artifact_id},
+    )
+    return {"package_id": package_id, "artifact_id": artifact_id, "ok": True}
+
+
+@router.delete("/packages/{package_id}/artifacts/{artifact_id}")
+async def detach_artifact_from_package(package_id: str, artifact_id: str, request: Request,
+                                        user=Depends(require_role("engineer", "admin"))):
+    ctx = _ctx(request)
+    art = await ctx.repo.get_artifact(artifact_id, user["tenant"])
+    if not art or art.package_id != package_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not in this package")
+    art.package_id = None
+    await ctx.repo.save_artifact(art)
+    ctx.audit.append(
+        tenant=user["tenant"], actor=user["user"], action="package.artifact_detached",
+        target_type="package", target_id=package_id,
+        metadata={"artifact_id": artifact_id},
+    )
+    return {"package_id": package_id, "artifact_id": artifact_id, "ok": True}
+
+
+@router.post("/packages/{package_id}/runs", status_code=status.HTTP_201_CREATED)
+async def analyze_package(package_id: str, request: Request,
+                          user=Depends(require_role("engineer", "admin"))):
+    """FR-PKG-04 — run the full analysis pipeline across every artifact in
+    the package as one logical run. Cross-artifact reasoning fires across
+    the whole bundle (FR-T0-03 / FR-XA-*)."""
+    ctx = _ctx(request)
+    pkg = await ctx.repo.get_package(package_id, user["tenant"])
+    if not pkg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+    if pkg.status == PackageStatus.archived:
+        raise HTTPException(status.HTTP_409_CONFLICT, "package is archived (read-only)")
+    arts = await ctx.repo.list_artifacts_in_package(package_id, user["tenant"])
+    if not arts:
+        raise HTTPException(status.HTTP_409_CONFLICT, "package has no artifacts")
+
+    # Build (artifact, path) tuples for the orchestrator. Skip artifacts
+    # whose source file has gone missing rather than crashing the whole run.
+    items: list[tuple[Artifact, Path]] = []
+    missing: list[str] = []
+    for a in arts:
+        p = Path(ctx.tmp_paths.get(a.id, ""))
+        if p.exists():
+            items.append((a, p))
+        else:
+            missing.append(a.id)
+    if not items:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"no artifact content available; missing: {missing}")
+
+    baseline = await _baseline_for(ctx, user["tenant"])
+    run = await ctx.orchestrator.analyze_package(items, tenant=user["tenant"], baseline=baseline)
+
+    ctx.audit.append(
+        tenant=user["tenant"], actor=user["user"],
+        action=f"package_run.{run.status.value}",
+        target_type="package", target_id=package_id,
+        metadata={
+            "run_id": run.id,
+            "artifact_count": len(items),
+            "missing_artifacts": missing,
+            "tier_path": [t.value for t in run.tier_path],
+            "baseline": baseline or ctx.catalog.baseline,
+            "circuit_breaker_tripped": run.circuit_breaker_tripped,
+        },
+    )
+    return run.model_dump()
 
 
 @router.get("/catalog")

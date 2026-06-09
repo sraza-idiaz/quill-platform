@@ -128,6 +128,10 @@ class Artifact(BaseModel):
     uploaded_by: Optional[str] = None
     status: ArtifactStatus = ArtifactStatus.ingested
     tenant: str = "default"
+    package_id: Optional[str] = Field(
+        None,
+        description="Phase II FR-PKG-02 — artifact's parent package (None = unassigned)."
+    )
     created_at: Optional[datetime] = None
 
 
@@ -220,4 +224,50 @@ class Program(BaseModel):
     status: ProgramStatus = ProgramStatus.active
     created_at: Optional[datetime] = None
     description: str = ""
+
+
+# --------------------------------------------------------------------------- #
+# Phase II — Packages (docs/13_PHASE_II_PLAN §4.C FR-PKG-*)
+# --------------------------------------------------------------------------- #
+class PackageStatus(str, Enum):
+    """Lifecycle of an RMF package as it moves through pre-adjudication.
+
+    Transitions (enforced server-side):
+      draft -> under_review        (engineer marks ready for attestation)
+      under_review -> submitted    (all findings attested + exported)
+      under_review -> draft        (sent back for more work)
+      submitted -> archived        (terminal; read-only)
+      draft -> archived            (abandoned)
+    """
+    draft = "draft"
+    under_review = "under_review"
+    submitted = "submitted"
+    archived = "archived"
+
+
+# Legal status transitions. Keys = current state, values = allowed next states.
+PACKAGE_STATE_MACHINE: dict[PackageStatus, set[PackageStatus]] = {
+    PackageStatus.draft:        {PackageStatus.under_review, PackageStatus.archived},
+    PackageStatus.under_review: {PackageStatus.draft, PackageStatus.submitted, PackageStatus.archived},
+    PackageStatus.submitted:    {PackageStatus.archived},
+    PackageStatus.archived:     set(),    # terminal
+}
+
+
+class Package(BaseModel):
+    """An RMF package — a bundle of related artifacts (SSP + architecture +
+    OSCAL + supplemental docs) that travel together through pre-adjudication.
+
+    Phase II makes packages the unit of analysis: the orchestrator's
+    analyze_package() runs the full pipeline across every artifact in the
+    package as one logical run, so cross-artifact reasoning (FR-T0-03,
+    FR-XA-*) fires across the whole bundle.
+    """
+    id: str                                # PKG-YYYY-XXXX or user-supplied
+    tenant: str = "default"
+    name: str
+    status: PackageStatus = PackageStatus.draft
+    description: str = ""
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 

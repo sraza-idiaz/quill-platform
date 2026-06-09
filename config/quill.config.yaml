@@ -9,11 +9,17 @@ version: 1
 air_gap: false                # DEMO — was true; flipped for Ollama Cloud Tier 2
 tier3_enabled: false          # cloud Tier 3 (Claude) still OFF
 
-# Tier 2 — Ollama. DEMO: gemma4:31b-cloud (Ollama Cloud).
-# Production: mistral:7b or mistral-small:24b pulled locally.
+# Tier 2 — Ollama Cloud, primary model locked to kimi-k2.5:cloud (Moonshot K2.5).
+# Phase II plan §4.F / DECISION-019. Trillion-param MoE class; strong long-context
+# reasoning + structured-output reliability. Fallback chain configured below.
+# Production (Phase III) will swap host to a local Ollama daemon + mistral:24b.
 ollama:
   host: "http://localhost:11434"
-  model: "gemma4:31b-cloud"
+  model: "kimi-k2.5:cloud"
+  fallback_models:                   # tried in order if primary fails calibration
+    - "qwen3.5:cloud"
+    - "gemma4:31b-cloud"
+    - "glm-5.1:cloud"
 enable_tier2_at_startup: true
 
 # Tier 1 retrieval (local; configured at WP-3 / T-3.1)

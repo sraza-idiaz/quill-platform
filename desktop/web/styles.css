@@ -120,6 +120,21 @@ header.topbar {
 }
 .role-picker select:hover { border-color: var(--accent); }
 
+/* "+" button to create a new program — only visible to admins via JS. */
+.program-new {
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-mono); font-size: 14px; font-weight: 600;
+  line-height: 1; padding: 0; cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+.program-new:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-subtle); }
+.program-new[hidden] { display: none; }
+
 /* ──────────────────────── MAIN GRID ──────────────────────── */
 main { flex: 1; display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
 
@@ -302,6 +317,7 @@ aside.sidebar {
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
+  padding-right: var(--space-6);             /* room for the × clear button on the right */
   padding: var(--space-3) var(--space-4);
   cursor: pointer;
   transition: border-color var(--transition-fast), background var(--transition-fast);
@@ -317,6 +333,42 @@ aside.sidebar {
   text-align: center; word-break: break-all;
 }
 .file-drop input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+/* Active-selection state: when a file is picked, the dashed dropzone shifts
+   to a solid accent border + subtle accent fill, signalling "ready to ingest". */
+.file-drop.has-file {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+.file-drop.has-file:hover { background: var(--bg-hover); }
+.file-drop.has-file .hint { color: var(--accent); }
+
+/* "×" Clear-file button. Sits in the top-right of the dropzone, above the
+   transparent <input>, so its click target is reachable. JS stops propagation
+   so this click does NOT bubble up to the <label> (which would reopen the picker). */
+.file-clear {
+  position: absolute;
+  top: 6px; right: 6px;
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-family: var(--font-mono); font-size: 14px; font-weight: 600; line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  z-index: 2;
+  letter-spacing: 0;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+.file-clear:hover {
+  color: var(--alarm);
+  border-color: var(--alarm);
+  background: var(--alarm-subtle);
+}
+.file-clear[hidden] { display: none; }
 
 /* Buttons */
 button {

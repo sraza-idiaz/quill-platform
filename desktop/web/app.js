@@ -18,9 +18,14 @@ const state = {
 };
 
 // ─────────────────────────────────────────── API ──
-function role() { return $("#role").value; }
+function role()    { return $("#role").value; }
+function program() { return $("#program") ? $("#program").value : "default"; }
 async function api(path, opts = {}) {
-  const headers = { "X-QUILL-Role": role(), ...(opts.headers || {}) };
+  const headers = {
+    "X-QUILL-Role":   role(),
+    "X-QUILL-Tenant": program(),
+    ...(opts.headers || {}),
+  };
   if (opts.json !== undefined) {
     headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(opts.json);
@@ -167,9 +172,37 @@ function inferArtifactStatus(a) {
 }
 
 // ─────────────────────────────────────────── Upload ──
+// Reset the upload form to its initial empty state. Centralized so the
+// post-submit cleanup and the explicit "×" clear use the same logic.
+function resetUploadForm() {
+  $("#fileInput").value = "";
+  $("#fileLabel").textContent = "PDF · DOCX · MD · OSCAL JSON";
+  $("#fileHint").textContent  = "Click to select an artifact";
+  $("#fileDrop").classList.remove("has-file");
+  $("#fileClear").hidden = true;
+  $("#ingestBtn").disabled = true;
+}
+
 $("#fileInput").addEventListener("change", (e) => {
   const f = e.target.files[0];
-  $("#fileLabel").textContent = f ? f.name : "PDF · DOCX · MD · OSCAL JSON";
+  if (f) {
+    $("#fileLabel").textContent = f.name;
+    $("#fileHint").textContent  = "Selected — ready to ingest";
+    $("#fileDrop").classList.add("has-file");
+    $("#fileClear").hidden = false;
+    $("#ingestBtn").disabled = false;
+  } else {
+    resetUploadForm();
+  }
+});
+
+// "×" button clears the picked file. preventDefault + stopPropagation are
+// critical so the click doesn't bubble up to the <label> wrapper, which
+// would otherwise re-open the OS file picker.
+$("#fileClear").addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  resetUploadForm();
 });
 
 $("#uploadForm").addEventListener("submit", async (e) => {
@@ -182,12 +215,12 @@ $("#uploadForm").addEventListener("submit", async (e) => {
   btn.textContent = "Ingesting…"; btn.disabled = true;
   try {
     const res = await fetch("/artifacts", {
-      method: "POST", body: fd, headers: { "X-QUILL-Role": role() },
+      method: "POST", body: fd,
+      headers: { "X-QUILL-Role": role(), "X-QUILL-Tenant": program() },
     });
     if (!res.ok) throw new Error(`${res.status} · ${await res.text()}`);
     const a = await res.json();
-    $("#fileInput").value = "";
-    $("#fileLabel").textContent = "PDF · DOCX · MD · OSCAL JSON";
+    resetUploadForm();
     await renderInventory();
     refreshDashboard();
     // Open the Attestation Gate immediately on the freshly uploaded artifact
@@ -705,7 +738,83 @@ function escapeHtml(s) {
 }
 function cssEsc(s) { return (s || "").replace(/(["\\])/g, "\\$1"); }
 
+// ─────────────────────────────────────────── Programs (Phase II) ──
+const PROGRAM_KEY = "quill_program";
+
+async function loadPrograms() {
+  let progs = [];
+  try { progs = await api("/programs"); } catch (e) { /* default-only fallback */ }
+  if (!progs.length) progs = [{ id: "default", name: "Default", status: "active" }];
+  const sel = $("#program");
+  const previous = sel.value;
+  sel.innerHTML = "";
+  for (const p of progs) {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.name + (p.status === "disabled" ? " (disabled)" : "");
+    if (p.status === "disabled") opt.disabled = true;
+    sel.appendChild(opt);
+  }
+  // Restore previously selected program if it still exists; otherwise prefer saved.
+  let saved = "default";
+  try { saved = localStorage.getItem(PROGRAM_KEY) || "default"; } catch (_) {}
+  const valid = (v) => progs.some(p => p.id === v && p.status !== "disabled");
+  sel.value = valid(previous) ? previous : (valid(saved) ? saved : progs[0].id);
+}
+
+function applyProgram() {
+  try { localStorage.setItem(PROGRAM_KEY, $("#program").value); } catch (_) {}
+  // Clear current artifact/run since they belong to a different tenant
+  state.currentArtifact = null;
+  state.currentRunId = null;
+  state.findingsByRun.clear();
+  state.runByArtifact.clear();
+  state.audit = [];
+  if (typeof setGateEmpty === "function") setGateEmpty();
+  refreshDashboard();
+}
+
+$("#program").addEventListener("change", applyProgram);
+
+// Show "+" button only when operator is admin
+function syncProgramNewBtn() {
+  const btn = $("#programNewBtn");
+  if (!btn) return;
+  btn.hidden = role() !== "admin";
+}
+$("#role").addEventListener("change", syncProgramNewBtn);
+
+$("#programNewBtn")?.addEventListener?.("click", async () => {
+  if (role() !== "admin") {
+    alert("Switch role to Admin to create a program.");
+    return;
+  }
+  const name = prompt("Program name (e.g. 'Aerospace R&D'):");
+  if (!name || !name.trim()) return;
+  const id = prompt(
+    "Program ID (lowercase, hyphens; this is the tenant key):",
+    name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+  );
+  if (!id) return;
+  const baseline = prompt("Baseline (low | moderate | high):", "moderate");
+  if (!baseline) return;
+  try {
+    const prog = await api("/programs", {
+      method: "POST",
+      json: { id: id.trim(), name: name.trim(), baseline: baseline.trim() },
+    });
+    await loadPrograms();
+    $("#program").value = prog.id;
+    applyProgram();
+  } catch (e) {
+    alert("Create program failed: " + e.message);
+  }
+});
+
 // ─────────────────────────────────────────── init ──
 $("#role").addEventListener("change", () => { refreshHealth(); });
-refreshHealth().then(refreshDashboard);
+refreshHealth().then(() => loadPrograms()).then(() => {
+  syncProgramNewBtn();
+  refreshDashboard();
+});
 setInterval(refreshHealth, 30000);

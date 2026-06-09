@@ -12,9 +12,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from backend.models.domain import Artifact, ArtifactType, FindingStatus
+from backend.models.domain import Artifact, ArtifactType, FindingStatus, Program, ProgramStatus
 from backend.services.auth import get_current_user, require_role
 from backend.services.change_request_service import AttestationError
 
@@ -44,6 +44,67 @@ async def health(request: Request):
         "air_gap": ctx.air_gap,
         "circuit_breaker_threshold": ctx.rubric.circuit_breaker_threshold,
     }
+
+
+# -- programs (Phase II — multi-tenant) ------------------------------------ #
+class ProgramCreateRequest(BaseModel):
+    id: str = Field(..., min_length=1, max_length=64,
+                    description="lowercase, hyphenated id used as tenant key")
+    name: str = Field(..., min_length=1, max_length=200)
+    baseline: str = Field("moderate", description="low | moderate | high")
+    framework: str = Field("nist-800-53-rev5")
+    owner: str = ""
+    description: str = ""
+
+
+@router.get("/programs")
+async def list_programs(request: Request, user=Depends(get_current_user)):
+    """List all programs the operator could possibly act in.
+
+    Phase II — identity is header-declared (no real auth). A program switcher
+    in the UI lets the operator select which tenant they're acting on next.
+    """
+    ctx = _ctx(request)
+    progs = await ctx.repo.list_programs()
+    return [p.model_dump(mode="json") for p in progs]
+
+
+@router.post("/programs", status_code=status.HTTP_201_CREATED)
+async def create_program(body: ProgramCreateRequest, request: Request,
+                         user=Depends(require_role("admin"))):
+    ctx = _ctx(request)
+    # ID validation: alpha-numeric + hyphens only (safe as a tenant key)
+    if not all(c.isalnum() or c == "-" for c in body.id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "program id must be alphanumeric or hyphen only")
+    if body.baseline not in ("low", "moderate", "high"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "baseline must be low | moderate | high")
+    existing = await ctx.repo.get_program(body.id)
+    if existing:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"program '{body.id}' already exists")
+    prog = Program(
+        id=body.id, name=body.name, baseline=body.baseline,
+        framework=body.framework, owner=body.owner or user["user"],
+        description=body.description,
+    )
+    await ctx.repo.save_program(prog)
+    ctx.audit.append(
+        tenant=body.id, actor=user["user"], action="program.created",
+        target_type="program", target_id=body.id,
+        metadata={"name": body.name, "baseline": body.baseline, "framework": body.framework},
+    )
+    return prog.model_dump(mode="json")
+
+
+@router.get("/programs/{program_id}")
+async def get_program(program_id: str, request: Request, user=Depends(get_current_user)):
+    ctx = _ctx(request)
+    p = await ctx.repo.get_program(program_id)
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "program not found")
+    return p.model_dump(mode="json")
 
 
 @router.get("/catalog")

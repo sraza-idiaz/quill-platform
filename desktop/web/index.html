@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>QUILL — RMF Pre-Adjudication Terminal</title>
 <link rel="icon" type="image/png" href="./quill-owl.png" />
-<link rel="stylesheet" href="./styles.css?v=16" />
+<link rel="stylesheet" href="./styles.css?v=20" />
 </head>
 <body>
 
@@ -25,6 +25,14 @@
     <div class="env-chip" id="tier2Chip">—</div>
     <div class="env-chip" id="breakerChip">breaker —</div>
     <button class="theme-toggle" id="themeToggle" type="button" aria-label="toggle theme">◐ Theme</button>
+    <div class="role-picker">
+      <span class="role-label">Program</span>
+      <select id="program" aria-label="active program">
+        <option value="default">Default</option>
+      </select>
+      <button class="program-new" id="programNewBtn" type="button"
+              title="Create a new program" aria-label="create program">+</button>
+    </div>
     <div class="role-picker">
       <span class="role-label">Operator</span>
       <select id="role" aria-label="acting role">
@@ -120,12 +128,14 @@
       </header>
 
       <form id="uploadForm" class="upload-bar">
-        <label class="file-drop">
-          <span class="hint">Click to select an artifact</span>
+        <label class="file-drop" id="fileDrop">
+          <span class="hint" id="fileHint">Click to select an artifact</span>
           <span class="name" id="fileLabel">PDF · DOCX · MD · OSCAL JSON</span>
           <input type="file" id="fileInput" accept=".md,.markdown,.txt,.pdf,.docx,.json" required />
+          <button type="button" class="file-clear" id="fileClear" hidden
+                  aria-label="Clear selected file" title="Clear selected file">×</button>
         </label>
-        <button type="submit">Ingest Artifact</button>
+        <button type="submit" id="ingestBtn" disabled>Ingest Artifact</button>
       </form>
 
       <div class="data-table-wrapper">
@@ -235,7 +245,7 @@
   <div class="footer-right" id="footerEnv">—</div>
 </footer>
 
-<script src="./app.js?v=14"></script>
+<script src="./app.js?v=20"></script>
 <script>
 (function(){
   var root=document.documentElement, KEY='quill-theme';

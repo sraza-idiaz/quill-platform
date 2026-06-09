@@ -10,12 +10,18 @@ All operations are tenant-scoped (FR-API-03 / NFR-SCAL-02).
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Optional, Protocol
 
-from backend.models.domain import Artifact, Finding, Run
+from backend.models.domain import Artifact, Finding, Program, ProgramStatus, Run
 
 
 class Repository(Protocol):
+    # Phase II — programs (tenants)
+    async def save_program(self, program: Program) -> Program: ...
+    async def get_program(self, program_id: str) -> Optional[Program]: ...
+    async def list_programs(self) -> list[Program]: ...
+
     async def save_artifact(self, artifact: Artifact) -> Artifact: ...
     async def get_artifact(self, artifact_id: str, tenant: str) -> Optional[Artifact]: ...
     async def list_artifacts(self, tenant: str) -> list[Artifact]: ...
@@ -34,10 +40,31 @@ class InMemoryRepository:
     """Dev/test store. Idempotent run findings (NFR-REL-04): replace, never append."""
 
     def __init__(self) -> None:
+        self._programs: dict[str, Program] = {}
         self._artifacts: dict[tuple[str, str], Artifact] = {}
         self._runs: dict[tuple[str, str], Run] = {}
         self._findings: dict[tuple[str, str], Finding] = {}
         self._artifact_text: dict[str, str] = {}  # artifact_id -> normalized text (for citation validation)
+        # Bootstrap "default" program for Phase I back-compat.
+        self._programs["default"] = Program(
+            id="default", name="Default Program", baseline="moderate",
+            owner="system", status=ProgramStatus.active,
+            created_at=dt.datetime.now(dt.timezone.utc),
+            description="Auto-created program for backward compatibility with Phase I.",
+        )
+
+    # -- programs (Phase II) ----------------------------------------------- #
+    async def save_program(self, program: Program) -> Program:
+        if program.created_at is None:
+            program.created_at = dt.datetime.now(dt.timezone.utc)
+        self._programs[program.id] = program
+        return program
+
+    async def get_program(self, program_id: str) -> Optional[Program]:
+        return self._programs.get(program_id)
+
+    async def list_programs(self) -> list[Program]:
+        return sorted(self._programs.values(), key=lambda p: (p.status.value, p.name.lower()))
 
     # -- artifacts ---------------------------------------------------------- #
     async def save_artifact(self, artifact: Artifact) -> Artifact:

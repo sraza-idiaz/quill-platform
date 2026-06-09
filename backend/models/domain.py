@@ -192,3 +192,32 @@ class Attestation(BaseModel):
     signed_at: Optional[datetime] = None
     signature: Optional[str] = Field(None, description="GPG signature via AXO git_signer")
     signature_key_id: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
+# Phase II — Program (multi-tenant) (docs/13_PHASE_II_PLAN §4.A FR-MT-*)
+# --------------------------------------------------------------------------- #
+class ProgramStatus(str, Enum):
+    active = "active"
+    disabled = "disabled"   # read-only; no new actions accepted
+
+
+class Program(BaseModel):
+    """A program (tenant) is the unit of isolation in Phase II.
+
+    Every artifact / run / finding / attestation lives inside exactly one
+    program. Users declare their active program via the X-QUILL-Tenant
+    header (Phase II identity model — see §4.A FR-ID-*).
+
+    The 'default' program exists for back-compat with Phase I and is created
+    automatically at startup.
+    """
+    id: str                                # tenant id (used as foreign key everywhere)
+    name: str                              # display name
+    baseline: str = "moderate"             # low | moderate | high
+    framework: str = "nist-800-53-rev5"    # catalog key
+    owner: str = ""                        # declared owner identity (Phase II: just a name)
+    status: ProgramStatus = ProgramStatus.active
+    created_at: Optional[datetime] = None
+    description: str = ""
+

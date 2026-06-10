@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>QUILL — RMF Pre-Adjudication Terminal</title>
 <link rel="icon" type="image/png" href="./quill-owl.png" />
-<link rel="stylesheet" href="./styles.css?v=24" />
+<link rel="stylesheet" href="./styles.css?v=25" />
 </head>
 <body>
 
@@ -64,6 +64,9 @@
       </button>
       <button class="nav-link" id="link-audit"              data-view="audit">
         <span class="nav-icon">⛓</span><span>Audit Trail Ledger</span>
+      </button>
+      <button class="nav-link" id="link-calibration"        data-view="calibration">
+        <span class="nav-icon">⟿</span><span>AI Calibration</span>
       </button>
     </nav>
     <div class="sidebar-footer">
@@ -198,6 +201,8 @@
           <div class="pkg-detail-actions" id="pkgDetailActions">
             <button class="btn-ghost btn-small" id="pkgAttachBtn">+ Attach artifact</button>
             <button class="btn-ghost btn-small" id="pkgAnalyzeBtn">↻ Analyze package</button>
+            <button class="btn-ghost btn-small" id="pkgWatchBtn" title="Watch a folder for changes — auto-re-run on edit">👁 Watch folder</button>
+            <button class="btn-ghost btn-small" id="pkgExportBtn" title="Stakeholder PDF / Version-Diff / OSCAL package">⬇ Export</button>
             <button class="btn-ghost btn-small" id="pkgStatusBtn">→ Change status</button>
             <button class="btn-ghost btn-small" id="pkgCloseBtn" aria-label="close">×</button>
           </div>
@@ -214,9 +219,25 @@
             </div>
           </div>
 
+          <div class="pkg-detail-section" id="pkgDiffSection" hidden>
+            <div class="section-label"><span>Since last analysis</span></div>
+            <div class="pkg-diff-row" id="pkgDiffRow">
+              <span class="diff-chip diff-new"      ><b id="diffNew">0</b> new</span>
+              <span class="diff-chip diff-resolved" ><b id="diffResolved">0</b> resolved</span>
+              <span class="diff-chip diff-stale"    ><b id="diffStale">0</b> stale</span>
+              <span class="diff-chip diff-unchanged"><b id="diffUnchanged">0</b> unchanged</span>
+            </div>
+            <p class="muted small" id="pkgDiffHint"></p>
+          </div>
+
           <div class="pkg-detail-section">
             <div class="section-label"><span>Latest analysis</span></div>
             <div id="pkgLatestRun" class="empty-hint">No runs yet. Click "Analyze package" to run one.</div>
+          </div>
+
+          <div class="pkg-detail-section" id="pkgWatchSection" hidden>
+            <div class="section-label"><span>Continuous watch</span></div>
+            <div id="pkgWatchInfo" class="empty-hint"></div>
           </div>
         </div>
       </section>
@@ -324,6 +345,54 @@
       </div>
     </div>
 
+    <!-- ============ VIEW 05: AI CALIBRATION (Phase II FR-AI-02) ============ -->
+    <div class="view-frame" id="view-calibration">
+      <header class="view-header">
+        <h2>AI Calibration</h2>
+        <p class="view-sub">
+          Confidence calibration measured against attested findings.
+          Phase II quality gate: <b>ECE ≤ 0.20</b> and monotonic across populated bins.
+        </p>
+      </header>
+      <div class="calib-wrap">
+        <div class="calib-metrics">
+          <div class="calib-card">
+            <div class="calib-label">Findings (total)</div>
+            <div class="calib-value" id="calib-total">—</div>
+          </div>
+          <div class="calib-card">
+            <div class="calib-label">Attested (used)</div>
+            <div class="calib-value" id="calib-attested">—</div>
+          </div>
+          <div class="calib-card">
+            <div class="calib-label">ECE</div>
+            <div class="calib-value" id="calib-ece">—</div>
+          </div>
+          <div class="calib-card">
+            <div class="calib-label">Monotonic</div>
+            <div class="calib-value" id="calib-monotonic">—</div>
+          </div>
+          <div class="calib-card">
+            <div class="calib-label">Phase II gate</div>
+            <div class="calib-value" id="calib-gate">—</div>
+          </div>
+        </div>
+
+        <div class="calib-chart-wrap">
+          <h3 style="margin-bottom: var(--space-2);">Reliability curve</h3>
+          <p class="muted small">
+            Diagonal = perfect calibration. Bars above the diagonal = over-confidence
+            (the model said 0.80, only 0.50 of those were real). Bars below = under-confidence.
+            Bars in light grey have fewer than 3 attestations and don't count toward the gate.
+          </p>
+          <svg id="calibChart" viewBox="0 0 600 380" class="calib-chart"></svg>
+          <div class="muted small">
+            <a href="#" id="calibCsvLink">Download reliability curve as CSV</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </section>
 </main>
 
@@ -332,7 +401,7 @@
   <div class="footer-right" id="footerEnv">—</div>
 </footer>
 
-<script src="./app.js?v=24"></script>
+<script src="./app.js?v=25"></script>
 <script>
 (function(){
   var root=document.documentElement, KEY='quill-theme';

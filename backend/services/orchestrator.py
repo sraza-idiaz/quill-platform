@@ -12,6 +12,7 @@ completes with T0 findings + flags the rest for human review. Idempotent
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -38,6 +39,12 @@ from backend.services.analysis.tier2_sufficiency import Analyzer, run_tier2
 from backend.services.analysis.citation_validator import validate_findings
 from backend.services.analysis.confidence import CircuitBreaker, apply_disposition
 from backend.models.domain import FindingType
+from backend.services.continuous import (
+    RunVersion,
+    carryover_attestations,
+    diff_findings,
+    finding_signature,
+)
 
 logger = logging.getLogger("quill.orchestrator")
 
@@ -54,7 +61,9 @@ class Orchestrator:
 
     async def analyze_package(self, items: list[tuple[Artifact, Path]],
                               tenant: str = "default",
-                              baseline: Optional[str] = None) -> Run:
+                              baseline: Optional[str] = None,
+                              package_id: Optional[str] = None,
+                              folder_fingerprint: str = "") -> Run:
         """Analyze a set of artifacts as ONE run so cross-artifact consistency
         checks (FR-T0-03) fire across them. The run is attributed to the first
         artifact for compatibility with the single-artifact API.
@@ -126,14 +135,48 @@ class Orchestrator:
             for f in valid:
                 f.needs_review = True
 
+        # Phase II FR-CONT-06 — carry forward prior attestations on findings
+        # whose signature is unchanged. Only happens when the caller supplied
+        # a package_id and there is a prior version on record.
+        diff_counts: dict[str, int] = {}
+        if package_id:
+            latest = await self.repo.latest_run_version(package_id, tenant)
+            if latest is not None:
+                prev_findings = await self.repo.list_findings(latest.run_id, tenant)
+                carry = carryover_attestations(prev_findings, valid)
+                for f in valid:
+                    if f.id in carry:
+                        prior = carry[f.id]
+                        f.status = prior.status
+                        f.needs_review = prior.needs_review or f.needs_review
+                d = diff_findings(prev_findings, valid,
+                                  prev_attested={pf.id for pf in prev_findings
+                                                 if pf.status in (FindingStatus.approved,
+                                                                  FindingStatus.edited)})
+                diff_counts = d.counts()
+
         await self.repo.replace_findings(run.id, tenant, valid)
         run.status = RunStatus.completed
         await self.repo.save_run(run, tenant=tenant)
         for a, _ in items:
             await self.repo.update_artifact_status(a.id, a.tenant, ArtifactStatus.reviewed)
-        logger.info("run %s completed: %d findings (tiers=%s, breaker=%s, artifacts=%d)",
+
+        # Phase II FR-CONT — version registry.
+        if package_id:
+            prior_versions = await self.repo.list_run_versions(package_id, tenant)
+            version = RunVersion(
+                package_id=package_id, tenant=tenant, run_id=run.id,
+                version_idx=len(prior_versions) + 1,
+                fingerprint=folder_fingerprint,
+                finding_signatures=[finding_signature(f) for f in valid],
+                created_at=time.time(),
+                diff_counts=diff_counts,
+            )
+            await self.repo.save_run_version(version)
+
+        logger.info("run %s completed: %d findings (tiers=%s, breaker=%s, artifacts=%d, diff=%s)",
                     run.id, len(valid), [t.value for t in run.tier_path],
-                    run.circuit_breaker_tripped, len(items))
+                    run.circuit_breaker_tripped, len(items), diff_counts)
         return run
 
     async def analyze(self, artifact: Artifact, path: Path,

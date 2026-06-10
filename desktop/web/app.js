@@ -63,6 +63,7 @@ function switchView(viewId) {
   if (viewId === "inventory")   renderInventory();
   if (viewId === "packages")    renderPackages();
   if (viewId === "audit")       refreshAudit();
+  if (viewId === "calibration") renderCalibration();
 }
 
 // Sidebar nav handler — extra logic so clicking the Gate when nothing is loaded
@@ -964,6 +965,60 @@ async function openPackageDetail(pkgId) {
   } else {
     slot.innerHTML = `<div class="empty-hint">No runs yet. Click "Analyze package" to run one.</div>`;
   }
+
+  // Phase II FR-CONT-04 — "since last analysis" diff badges + watch state.
+  await loadPackageDiff(pkgId);
+  await loadPackageWatch(pkgId);
+}
+
+async function loadPackageDiff(pkgId) {
+  const section = $("#pkgDiffSection");
+  const hint = $("#pkgDiffHint");
+  try {
+    const versions = await api(`/packages/${pkgId}/versions`);
+    if (!versions || versions.length < 1) {
+      section.hidden = true;
+      return;
+    }
+    const diff = await api(`/packages/${pkgId}/diff`);
+    const c = diff.counts || {new:0, resolved:0, stale:0, unchanged:0};
+    $("#diffNew").textContent       = c.new;
+    $("#diffResolved").textContent  = c.resolved;
+    $("#diffStale").textContent     = c.stale;
+    $("#diffUnchanged").textContent = c.unchanged;
+    if (versions.length < 2) {
+      hint.textContent = `Version 1 — first analysis; everything is new.`;
+    } else {
+      const v = versions[0];
+      hint.textContent = `Version ${v.version_idx} vs version ${v.version_idx - 1}.` +
+        (c.stale > 0 ? ` ${c.stale} previously-attested finding(s) need re-confirmation.` : "");
+    }
+    section.hidden = false;
+  } catch (_) {
+    section.hidden = true;
+  }
+}
+
+async function loadPackageWatch(pkgId) {
+  const section = $("#pkgWatchSection");
+  const info = $("#pkgWatchInfo");
+  try {
+    const w = await api(`/packages/${pkgId}/watch`);
+    info.innerHTML = `<div><b>Watching:</b> <code>${escapeHtml(w.folder)}</code></div>` +
+      `<div class="muted small">Poll every ${w.poll_interval_s}s · ` +
+      `<a href="#" id="pkgUnwatchLink">stop watching</a></div>`;
+    section.hidden = false;
+    $("#pkgUnwatchLink")?.addEventListener?.("click", async (e) => {
+      e.preventDefault();
+      if (!confirm("Stop watching this folder?")) return;
+      try {
+        await api(`/packages/${pkgId}/watch`, { method: "DELETE" });
+        await openPackageDetail(pkgId);
+      } catch (e) { alert("Stop-watch failed: " + e.message); }
+    });
+  } catch (_) {
+    section.hidden = true;
+  }
 }
 
 $("#pkgCloseBtn")?.addEventListener?.("click", () => {
@@ -1040,6 +1095,59 @@ $("#pkgAnalyzeBtn")?.addEventListener?.("click", async () => {
     alert("Analyze failed: " + e.message);
   } finally {
     btn.textContent = orig; btn.disabled = false;
+  }
+});
+
+$("#pkgWatchBtn")?.addEventListener?.("click", async () => {
+  if (!state.currentPackageId) return;
+  const folder = prompt(
+    "Absolute path to the folder to watch.\n\n" +
+    "QUILL will poll this folder every ~5s. When a file is added or changed,\n" +
+    "the package is re-analyzed automatically and attestations on unchanged\n" +
+    "findings carry forward (FR-CONT-06).\n\n" +
+    "Example: /Users/you/work/program-x-package"
+  );
+  if (!folder || !folder.trim()) return;
+  try {
+    await api(`/packages/${state.currentPackageId}/watch`,
+              { method: "POST", json: { folder: folder.trim() } });
+    await openPackageDetail(state.currentPackageId);
+    alert(`Watching ${folder.trim()} — drop files in there and QUILL will re-analyze.`);
+  } catch (e) {
+    alert("Watch setup failed: " + e.message);
+  }
+});
+
+$("#pkgExportBtn")?.addEventListener?.("click", async () => {
+  if (!state.currentPackageId) return;
+  const choice = prompt(
+    "Export format:\n" +
+    "  1. Stakeholder summary PDF (FR-EXP-04)\n" +
+    "  2. Version-diff report (FR-EXP-05)\n" +
+    "  3. OSCAL package bundle (FR-EXP-06)\n\n" +
+    "Enter 1, 2, or 3:"
+  );
+  const map = { "1": "stakeholder_pdf", "2": "version_diff", "3": "oscal_package" };
+  const fmt = map[(choice || "").trim()];
+  if (!fmt) return;
+  try {
+    const res = await fetch(`/packages/${state.currentPackageId}/export?format=${fmt}`, {
+      headers: { "X-QUILL-Role": role(), "X-QUILL-Tenant": program() },
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(`HTTP ${res.status}: ${t}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const ext = fmt === "stakeholder_pdf" ? "pdf" : (fmt === "version_diff" ? "md" : "json");
+    a.download = `${state.currentPackageId}-${fmt}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert("Export failed: " + e.message);
   }
 });
 
@@ -1147,3 +1255,91 @@ refreshHealth().then(() => loadPrograms()).then(() => {
   refreshDashboard();
 });
 setInterval(refreshHealth, 30000);
+
+// ─────────────────────────────────────────── AI Calibration (Phase II FR-AI-02) ──
+async function renderCalibration() {
+  let report;
+  try { report = await api("/calibration/report"); }
+  catch (e) { return; }
+
+  $("#calib-total").textContent    = report.n_total;
+  $("#calib-attested").textContent = report.n_attested;
+  $("#calib-ece").textContent      = (report.ece ?? 0).toFixed(3);
+  $("#calib-monotonic").textContent = report.monotonic ? "yes" : `no (${report.monotonic_violations})`;
+
+  const gate = report.phase_ii_gate?.overall_pass;
+  const gateEl = $("#calib-gate");
+  gateEl.textContent = report.n_attested === 0 ? "no data"
+                       : (gate ? "PASS" : "FAIL");
+  gateEl.classList.remove("pass", "fail");
+  if (report.n_attested > 0) gateEl.classList.add(gate ? "pass" : "fail");
+
+  // Render SVG bar chart of observed_rate per bin, with diagonal reference.
+  const svg = $("#calibChart");
+  svg.innerHTML = "";
+  const W = 600, H = 380, PAD_L = 50, PAD_R = 20, PAD_T = 20, PAD_B = 50;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+
+  // axes
+  function mkLine(x1, y1, x2, y2, cls) {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    el.setAttribute("x1", x1); el.setAttribute("y1", y1);
+    el.setAttribute("x2", x2); el.setAttribute("y2", y2);
+    el.setAttribute("class", cls); svg.appendChild(el);
+  }
+  function mkText(x, y, str, cls) {
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    t.setAttribute("x", x); t.setAttribute("y", y);
+    t.setAttribute("class", cls || "label"); t.textContent = str;
+    svg.appendChild(t);
+  }
+  function mkRect(x, y, w, h, cls) {
+    const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    r.setAttribute("x", x); r.setAttribute("y", y);
+    r.setAttribute("width", w); r.setAttribute("height", h);
+    r.setAttribute("class", cls); svg.appendChild(r);
+  }
+
+  // axes + grid
+  mkLine(PAD_L, PAD_T, PAD_L, PAD_T + innerH, "axis");
+  mkLine(PAD_L, PAD_T + innerH, PAD_L + innerW, PAD_T + innerH, "axis");
+  for (let i = 0; i <= 10; i++) {
+    const y = PAD_T + innerH * (1 - i / 10);
+    mkLine(PAD_L, y, PAD_L + innerW, y, "grid");
+    mkText(PAD_L - 6, y + 3, (i / 10).toFixed(1)).setAttribute?.("text-anchor", "end");
+  }
+  // diagonal reference
+  mkLine(PAD_L, PAD_T + innerH, PAD_L + innerW, PAD_T, "diag");
+
+  const bins = report.bins || [];
+  const colW = innerW / Math.max(bins.length, 1);
+  bins.forEach((b, i) => {
+    const rate = b.observed_rate || 0;
+    const h = innerH * rate;
+    const x = PAD_L + i * colW + 4;
+    const y = PAD_T + innerH - h;
+    const cls = (b.n >= report.sample_threshold) ? "bar" : "bar low";
+    mkRect(x, y, colW - 8, h, cls);
+    mkText(x + (colW - 8) / 2, PAD_T + innerH + 14,
+           `${b.lo.toFixed(1)}–${b.hi.toFixed(1)}`)
+      .setAttribute?.("text-anchor", "middle");
+    if (b.n > 0) {
+      mkText(x + (colW - 8) / 2, y - 4, `${b.n_real}/${b.n}`)
+        .setAttribute?.("text-anchor", "middle");
+    }
+  });
+  mkText(PAD_L + innerW / 2, H - 8, "Predicted confidence bucket").setAttribute?.("text-anchor", "middle");
+  // y-axis label
+  const yl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  yl.setAttribute("class", "label");
+  yl.setAttribute("transform", `translate(14, ${PAD_T + innerH / 2}) rotate(-90)`);
+  yl.setAttribute("text-anchor", "middle");
+  yl.textContent = "Observed approval rate";
+  svg.appendChild(yl);
+
+  $("#calibCsvLink").onclick = (e) => {
+    e.preventDefault();
+    window.location.href = "/calibration/curve.csv";
+  };
+}

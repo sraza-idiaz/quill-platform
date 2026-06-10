@@ -27,6 +27,7 @@ from backend.services.provenance_service import ProvenanceLedger
 from backend.services.change_request_service import ChangeRequestService
 from backend.services.gpg_signer import Signer, make_default_signer
 from backend.services.analysis.synonyms import Synonyms, load_synonyms
+from backend.services.continuous import FolderWatcher, WatchEvent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("quill")
@@ -47,6 +48,9 @@ class QuillContext:
     synonyms: Synonyms
     air_gap: bool = True
     tmp_paths: dict[str, str] = field(default_factory=dict)
+    # Phase II FR-CONT — folder watcher state. The watcher is started lazily
+    # by lifespan; tests that don't run lifespan still see a usable instance.
+    watcher: FolderWatcher = field(default_factory=FolderWatcher)
 
 
 def _envbool(name: str, default: Optional[bool] = None) -> Optional[bool]:
@@ -97,10 +101,25 @@ def build_context(analyzer: Optional[Analyzer] = None, config_path: Optional[Pat
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.quill = getattr(app.state, "quill", None) or build_context()
-    logger.info("QUILL up — baseline=%s controls=%d air_gap=%s breaker=%d",
-                app.state.quill.catalog.baseline, len(app.state.quill.catalog.controls),
-                app.state.quill.air_gap, app.state.quill.rubric.circuit_breaker_threshold)
-    yield
+    # Phase II FR-CONT-01 — wire the watcher callback to the orchestrator.
+    ctx = app.state.quill
+
+    async def _on_change(ev: WatchEvent) -> None:
+        from backend.services.continuous_runner import handle_watch_event
+        await handle_watch_event(ctx, ev)
+
+    ctx.watcher.on_change(_on_change)
+    if os.environ.get("QUILL_WATCHER_ENABLED", "1") == "1":
+        await ctx.watcher.start()
+
+    logger.info("QUILL up — baseline=%s controls=%d air_gap=%s breaker=%d watcher=%s",
+                ctx.catalog.baseline, len(ctx.catalog.controls),
+                ctx.air_gap, ctx.rubric.circuit_breaker_threshold,
+                "on" if ctx.watcher._task is not None else "off")
+    try:
+        yield
+    finally:
+        await ctx.watcher.stop()
 
 
 def create_app(context: Optional[QuillContext] = None) -> FastAPI:

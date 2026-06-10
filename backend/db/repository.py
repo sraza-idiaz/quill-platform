@@ -15,6 +15,7 @@ from typing import Optional, Protocol
 
 from backend.models.domain import (Artifact, Finding, Package, PackageStatus,
                                     Program, ProgramStatus, Run)
+from backend.services.continuous import RunVersion
 
 
 class Repository(Protocol):
@@ -30,6 +31,11 @@ class Repository(Protocol):
     async def update_package_status(self, package_id: str, tenant: str,
                                     status: PackageStatus) -> None: ...
     async def list_artifacts_in_package(self, package_id: str, tenant: str) -> list[Artifact]: ...
+
+    # Phase II FR-CONT — version registry
+    async def save_run_version(self, version: RunVersion) -> RunVersion: ...
+    async def list_run_versions(self, package_id: str, tenant: str) -> list[RunVersion]: ...
+    async def latest_run_version(self, package_id: str, tenant: str) -> Optional[RunVersion]: ...
 
     async def save_artifact(self, artifact: Artifact) -> Artifact: ...
     async def get_artifact(self, artifact_id: str, tenant: str) -> Optional[Artifact]: ...
@@ -55,6 +61,10 @@ class InMemoryRepository:
         self._runs: dict[tuple[str, str], Run] = {}
         self._findings: dict[tuple[str, str], Finding] = {}
         self._artifact_text: dict[str, str] = {}  # artifact_id -> normalized text (for citation validation)
+        # Phase II FR-CONT — package version registry. List per (tenant, package_id),
+        # most recent last. Each entry carries finding signatures so version
+        # diffs don't have to re-load Finding rows.
+        self._versions: dict[tuple[str, str], list[RunVersion]] = {}
         # Bootstrap "default" program for Phase I back-compat.
         self._programs["default"] = Program(
             id="default", name="Default Program", baseline="moderate",
@@ -159,3 +169,16 @@ class InMemoryRepository:
 
     def artifact_text(self, artifact_id: str) -> str:
         return self._artifact_text.get(artifact_id, "")
+
+    # -- Phase II FR-CONT — run versions ---------------------------------- #
+    async def save_run_version(self, version: RunVersion) -> RunVersion:
+        key = (version.tenant, version.package_id)
+        self._versions.setdefault(key, []).append(version)
+        return version
+
+    async def list_run_versions(self, package_id: str, tenant: str) -> list[RunVersion]:
+        return list(self._versions.get((tenant, package_id), []))
+
+    async def latest_run_version(self, package_id: str, tenant: str) -> Optional[RunVersion]:
+        versions = self._versions.get((tenant, package_id), [])
+        return versions[-1] if versions else None

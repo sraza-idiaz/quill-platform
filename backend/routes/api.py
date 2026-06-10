@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi.responses import Response
 
 from pydantic import BaseModel, Field
 
@@ -324,7 +325,14 @@ async def analyze_package(package_id: str, request: Request,
                             f"no artifact content available; missing: {missing}")
 
     baseline = await _baseline_for(ctx, user["tenant"])
-    run = await ctx.orchestrator.analyze_package(items, tenant=user["tenant"], baseline=baseline)
+    run = await ctx.orchestrator.analyze_package(
+        items, tenant=user["tenant"], baseline=baseline,
+        package_id=package_id,
+    )
+
+    # Pull the new version + diff counts back for the audit payload.
+    latest = await ctx.repo.latest_run_version(package_id, user["tenant"])
+    diff_counts = latest.diff_counts if latest else {}
 
     ctx.audit.append(
         tenant=user["tenant"], actor=user["user"],
@@ -337,9 +345,155 @@ async def analyze_package(package_id: str, request: Request,
             "tier_path": [t.value for t in run.tier_path],
             "baseline": baseline or ctx.catalog.baseline,
             "circuit_breaker_tripped": run.circuit_breaker_tripped,
+            "diff_counts": diff_counts,
         },
     )
-    return run.model_dump()
+    out = run.model_dump()
+    out["diff_counts"] = diff_counts
+    return out
+
+
+# -- continuous re-analysis (Phase II FR-CONT) ----------------------------- #
+
+class WatchRequest(BaseModel):
+    folder: str = Field(..., min_length=1,
+                        description="absolute filesystem path the watcher should monitor")
+
+
+@router.post("/packages/{package_id}/watch",
+             status_code=status.HTTP_201_CREATED)
+async def watch_package(package_id: str, body: WatchRequest, request: Request,
+                        user=Depends(require_role("engineer", "admin"))):
+    """FR-CONT-01 — register a folder as the source of truth for a package.
+
+    The watcher polls the folder every ~5s; on content change it re-runs
+    the package's analysis and records a new version with diff metadata.
+    """
+    ctx = _ctx(request)
+    pkg = await ctx.repo.get_package(package_id, user["tenant"])
+    if not pkg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+    folder = Path(body.folder).expanduser().resolve()
+    if not folder.exists() or not folder.is_dir():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"folder does not exist or is not a directory: {folder}")
+    ctx.watcher.add_watch(package_id, user["tenant"], folder)
+    ctx.audit.append(
+        tenant=user["tenant"], actor=user["user"], action="watch.added",
+        target_type="package", target_id=package_id,
+        metadata={"folder": str(folder)},
+    )
+    return {
+        "package_id": package_id,
+        "folder": str(folder),
+        "poll_interval_s": ctx.watcher._poll_s,
+        "ok": True,
+    }
+
+
+@router.delete("/packages/{package_id}/watch")
+async def unwatch_package(package_id: str, request: Request,
+                          user=Depends(require_role("engineer", "admin"))):
+    ctx = _ctx(request)
+    ctx.watcher.remove_watch(package_id)
+    ctx.audit.append(
+        tenant=user["tenant"], actor=user["user"], action="watch.removed",
+        target_type="package", target_id=package_id,
+    )
+    return {"package_id": package_id, "ok": True}
+
+
+@router.get("/packages/{package_id}/watch")
+async def get_watch(package_id: str, request: Request, user=Depends(get_current_user)):
+    """Inspect the current watch registration (folder + last fingerprint)."""
+    ctx = _ctx(request)
+    for w in ctx.watcher.list_watches():
+        if w["package_id"] == package_id:
+            return w
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "no watch registered for this package")
+
+
+@router.post("/packages/{package_id}/watch/poll")
+async def poll_watch(package_id: str, request: Request,
+                     user=Depends(require_role("engineer", "admin"))):
+    """Force a single watch-poll cycle. Useful for tests + the
+    'Re-analyze now' button when the operator doesn't want to wait for
+    the next poll tick. Returns the events that fired (could be empty).
+    """
+    ctx = _ctx(request)
+    events = await ctx.watcher.poll_once()
+    return {"events_fired": [
+        {"package_id": e.package_id, "fingerprint": e.fingerprint,
+         "detected_at": e.detected_at}
+        for e in events if e.package_id == package_id or package_id == "*"
+    ]}
+
+
+@router.get("/packages/{package_id}/versions")
+async def list_package_versions(package_id: str, request: Request,
+                                user=Depends(get_current_user)):
+    """FR-CONT — list every analysis run of this package, most recent first,
+    with the new/resolved/unchanged counts computed at run time."""
+    ctx = _ctx(request)
+    pkg = await ctx.repo.get_package(package_id, user["tenant"])
+    if not pkg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+    versions = await ctx.repo.list_run_versions(package_id, user["tenant"])
+    out = []
+    for v in reversed(versions):
+        out.append({
+            "package_id": v.package_id,
+            "run_id": v.run_id,
+            "version_idx": v.version_idx,
+            "fingerprint": v.fingerprint,
+            "diff_counts": v.diff_counts,
+            "finding_count": len(v.finding_signatures),
+            "created_at": v.created_at,
+        })
+    return out
+
+
+@router.get("/packages/{package_id}/diff")
+async def package_diff(package_id: str, request: Request,
+                       user=Depends(get_current_user),
+                       from_run: str | None = None, to_run: str | None = None):
+    """FR-CONT-04 — finding-state diff between two runs of the same package.
+
+    Defaults: `from_run` = previous version, `to_run` = latest version.
+    The diff drives the UI 'since last analysis: 3 new, 2 resolved' badge
+    and the stale-attestation re-confirm flow (FR-CONT-07).
+    """
+    from backend.services.continuous import diff_findings
+    ctx = _ctx(request)
+    pkg = await ctx.repo.get_package(package_id, user["tenant"])
+    if not pkg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+    versions = await ctx.repo.list_run_versions(package_id, user["tenant"])
+    if len(versions) < 1:
+        return {"counts": {"new": 0, "resolved": 0, "stale": 0, "unchanged": 0},
+                "new": [], "resolved": [], "stale": [], "unchanged": []}
+    to_v = next((v for v in versions if v.run_id == to_run), versions[-1]) if to_run \
+           else versions[-1]
+    if len(versions) < 2 and not from_run:
+        # Single version — everything is "new".
+        new_findings = await ctx.repo.list_findings(to_v.run_id, user["tenant"])
+        return {"counts": {"new": len(new_findings), "resolved": 0,
+                           "stale": 0, "unchanged": 0},
+                "new": [f.model_dump(mode="json") for f in new_findings],
+                "resolved": [], "stale": [], "unchanged": []}
+    from_v = next((v for v in versions if v.run_id == from_run), None) if from_run \
+             else versions[-2]
+    if from_v is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "from_run not found for this package")
+    prev_findings = await ctx.repo.list_findings(from_v.run_id, user["tenant"])
+    new_findings = await ctx.repo.list_findings(to_v.run_id, user["tenant"])
+    d = diff_findings(prev_findings, new_findings,
+                      prev_attested={f.id for f in prev_findings
+                                     if f.status.value in ("approved", "edited")})
+    out = d.to_dict()
+    out["from_run"] = from_v.run_id
+    out["to_run"] = to_v.run_id
+    return out
 
 
 @router.get("/catalog")
@@ -524,6 +678,162 @@ async def list_audit(request: Request, user=Depends(get_current_user), target_id
 async def verify_audit(request: Request, user=Depends(get_current_user)):
     ctx = _ctx(request)
     return {"chain_valid": ctx.audit.verify_chain(), "events": len(ctx.audit.export())}
+
+
+# -- AI calibration (Phase II FR-AI-02) ------------------------------------ #
+@router.get("/calibration/report")
+async def calibration_report(request: Request,
+                              user=Depends(get_current_user),
+                              program: str | None = None,
+                              package_id: str | None = None):
+    """Compute the reliability curve + ECE + monotonicity for the operator's
+    program (default) or a specified program/package scope.
+
+    Phase II quality gate: ECE ≤ 0.20 AND monotonic across populated bins.
+    Empty result (no attestations yet) is a valid "no data" response, not
+    an error — the curve fills in as humans attest findings.
+    """
+    from backend.services.calibration import compute_calibration
+    ctx = _ctx(request)
+    tenant = program or user["tenant"]
+    # Gather all findings for the tenant. In-memory repo: walk findings.
+    all_findings = []
+    if package_id:
+        pkg = await ctx.repo.get_package(package_id, tenant)
+        if not pkg:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+        versions = await ctx.repo.list_run_versions(package_id, tenant)
+        for v in versions:
+            all_findings.extend(await ctx.repo.list_findings(v.run_id, tenant))
+    else:
+        # All findings for the tenant across every run we have a record of.
+        # Iterate via internal _findings (in-memory repo); kept tenant-scoped.
+        for (t, _fid), f in getattr(ctx.repo, "_findings", {}).items():
+            if t == tenant:
+                all_findings.append(f)
+    report = compute_calibration(all_findings)
+    out = report.to_dict()
+    out["scope"] = {"tenant": tenant, "package_id": package_id}
+    return out
+
+
+@router.get("/calibration/curve.csv")
+async def calibration_curve_csv(request: Request, user=Depends(get_current_user),
+                                 program: str | None = None):
+    """The reliability curve as CSV — useful for embedding in release notes."""
+    from backend.services.calibration import compute_calibration, reliability_curve_csv
+    ctx = _ctx(request)
+    tenant = program or user["tenant"]
+    all_findings = []
+    for (t, _fid), f in getattr(ctx.repo, "_findings", {}).items():
+        if t == tenant:
+            all_findings.append(f)
+    report = compute_calibration(all_findings)
+    csv = reliability_curve_csv(report)
+    return Response(content=csv, media_type="text/csv",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="quill-reliability-{tenant}.csv"'})
+
+
+# -- package exports (Phase II FR-EXP-04..06) ------------------------------ #
+@router.get("/packages/{package_id}/export")
+async def export_package(package_id: str, request: Request,
+                          user=Depends(require_role("engineer", "admin", "viewer")),
+                          format: str = "stakeholder_pdf"):
+    """Three package-scoped export formats:
+
+      * `stakeholder_pdf` (FR-EXP-04) — stakeholder summary PDF.
+      * `version_diff`    (FR-EXP-05) — markdown comparing the two most
+        recent runs of this package (or the only run if just one exists).
+      * `oscal_package`   (FR-EXP-06) — OSCAL 1.1.x bundle (SSP shell +
+        POA&M + Assessment Results) shaped for eMASS-class ingestion.
+
+    Authoritative findings (the ones surfaced in the POA&M / Assessment
+    Results) are attested only (P-CORE-02).
+    """
+    from backend.services.package_exports import (
+        render_oscal_package_json,
+        render_stakeholder_pdf,
+        render_version_diff_markdown,
+    )
+    ctx = _ctx(request)
+    pkg = await ctx.repo.get_package(package_id, user["tenant"])
+    if not pkg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+    versions = await ctx.repo.list_run_versions(package_id, user["tenant"])
+    if not versions:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "package has no analysis runs to export")
+    baseline = await _baseline_for(ctx, user["tenant"]) or ctx.catalog.baseline
+
+    if format == "stakeholder_pdf":
+        latest = versions[-1]
+        findings = await ctx.repo.list_findings(latest.run_id, user["tenant"])
+        pdf_bytes = render_stakeholder_pdf(
+            package=pkg, findings=findings, baseline=baseline, run_id=latest.run_id,
+        )
+        ctx.audit.append(
+            tenant=user["tenant"], actor=user["user"], action="export.stakeholder_pdf",
+            target_type="package", target_id=package_id,
+            metadata={"run_id": latest.run_id, "bytes": len(pdf_bytes)},
+        )
+        return Response(
+            content=pdf_bytes, media_type="application/pdf",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{package_id}-stakeholder.pdf"'},
+        )
+
+    if format == "version_diff":
+        if len(versions) < 2:
+            # Single version — return a markdown stub showing only "new".
+            v = versions[-1]
+            findings = await ctx.repo.list_findings(v.run_id, user["tenant"])
+            md = render_version_diff_markdown(
+                package=pkg, from_run_id="(none)", to_run_id=v.run_id,
+                from_findings=[], to_findings=findings,
+            )
+        else:
+            v_prev, v_to = versions[-2], versions[-1]
+            prev = await ctx.repo.list_findings(v_prev.run_id, user["tenant"])
+            new = await ctx.repo.list_findings(v_to.run_id, user["tenant"])
+            md = render_version_diff_markdown(
+                package=pkg, from_run_id=v_prev.run_id, to_run_id=v_to.run_id,
+                from_findings=prev, to_findings=new,
+            )
+        ctx.audit.append(
+            tenant=user["tenant"], actor=user["user"], action="export.version_diff",
+            target_type="package", target_id=package_id,
+            metadata={"versions": [v.run_id for v in versions[-2:]]},
+        )
+        return Response(
+            content=md, media_type="text/markdown",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{package_id}-diff.md"'},
+        )
+
+    if format == "oscal_package":
+        latest = versions[-1]
+        findings = await ctx.repo.list_findings(latest.run_id, user["tenant"])
+        arts = await ctx.repo.list_artifacts_in_package(package_id, user["tenant"])
+        artifact_filenames = {a.id: a.filename for a in arts}
+        bundle = render_oscal_package_json(
+            package=pkg, run_id=latest.run_id, baseline=baseline,
+            findings=findings, artifact_filenames=artifact_filenames,
+        )
+        ctx.audit.append(
+            tenant=user["tenant"], actor=user["user"], action="export.oscal_package",
+            target_type="package", target_id=package_id,
+            metadata={"run_id": latest.run_id},
+        )
+        return Response(
+            content=bundle, media_type="application/json",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{package_id}-oscal.json"'},
+        )
+
+    raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                        f"unknown package export format: {format} "
+                        "(expected stakeholder_pdf | version_diff | oscal_package)")
 
 
 # -- export (FR-EXP) ------------------------------------------------------- #

@@ -33,3 +33,6 @@ passlib[bcrypt]==1.7.4
 
 # Multipart file uploads in FastAPI (used by /artifacts upload).
 python-multipart>=0.0.9
+
+# Phase II FR-EXP-04 — Stakeholder Summary PDF rendering (pure-Python, no system deps).
+fpdf2==2.7.9

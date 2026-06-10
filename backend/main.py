@@ -140,6 +140,46 @@ def create_app(context: Optional[QuillContext] = None) -> FastAPI:
         async def _root():
             return RedirectResponse(url="/ui/")
 
+    # ---- HTTP Basic Auth gate (Phase II demo deployments) -------------- #
+    # When BOTH env vars are set, every request must carry a valid
+    # Authorization: Basic <base64(user:pass)> header. /health stays open
+    # so Render's load-balancer probes don't 401. Headers/identity (the
+    # X-QUILL-* triple) still drive role-based authz inside the app —
+    # Basic Auth is a perimeter gate, not a replacement for that.
+    import base64
+    import os as _os
+    import secrets
+    from fastapi import Request
+    from fastapi.responses import Response
+
+    _ba_user = _os.environ.get("QUILL_BASIC_AUTH_USER")
+    _ba_pass = _os.environ.get("QUILL_BASIC_AUTH_PASSWORD")
+    _ba_realm = _os.environ.get("QUILL_BASIC_AUTH_REALM", "QUILL")
+    _ba_open_paths = {"/health"}        # always reachable (Render probe)
+
+    if _ba_user and _ba_pass:
+        _expected = base64.b64encode(f"{_ba_user}:{_ba_pass}".encode()).decode()
+        logger.info("HTTP Basic Auth: ENABLED (user=%s, realm=%s, open=%s)",
+                    _ba_user, _ba_realm, ", ".join(_ba_open_paths))
+
+        @app.middleware("http")
+        async def _basic_auth(request: Request, call_next):
+            if request.url.path in _ba_open_paths:
+                return await call_next(request)
+            header = request.headers.get("authorization", "")
+            if header.startswith("Basic "):
+                supplied = header.split(" ", 1)[1].strip()
+                # constant-time compare to defeat timing oracles
+                if secrets.compare_digest(supplied, _expected):
+                    return await call_next(request)
+            return Response(
+                status_code=401,
+                headers={"WWW-Authenticate": f'Basic realm="{_ba_realm}"'},
+                content="Authentication required.",
+            )
+    else:
+        logger.info("HTTP Basic Auth: disabled (set QUILL_BASIC_AUTH_USER + QUILL_BASIC_AUTH_PASSWORD to enable)")
+
     # Make sure dev iterations on the UI aren't served from a stale browser cache.
     @app.middleware("http")
     async def _no_cache_ui(request, call_next):

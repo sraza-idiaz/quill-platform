@@ -30,8 +30,21 @@ def _hdr(tenant: str, role: str = "engineer"):
 
 
 @pytest.fixture
-def client():
-    ctx = build_context(analyzer=MockAnalyzer())
+def client(tmp_path):
+    """Per-program baseline tests pin to the SAMPLE catalog (config/catalog.yaml),
+    not the full Rev. 5 catalog: this test set asserts very specific
+    Low-vs-High membership for CM-2 / SI-4 that only holds on the curated
+    sample catalog. The full Rev. 5 catalog has CM-2 in the Low baseline
+    (per NIST), so on that catalog 'CM-2 not in low_missing' is incorrect.
+    """
+    cfg_src = ROOT / "config" / "quill.config.yaml"
+    cfg = cfg_src.read_text().replace(
+        'catalog_path: "config/catalog-nist-800-53-rev5.yaml"',
+        'catalog_path: "config/catalog.yaml"',
+    )
+    cfg_path = tmp_path / "quill.config.yaml"
+    cfg_path.write_text(cfg)
+    ctx = build_context(analyzer=MockAnalyzer(), config_path=cfg_path)
     return TestClient(create_app(ctx))
 
 

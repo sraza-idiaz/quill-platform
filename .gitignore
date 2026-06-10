@@ -35,3 +35,7 @@ quill_local.db
 # Eval outputs — keep the latest report only
 eval/reports/eval-*.json
 eval/reports/eval-*.md
+
+# OSCAL upstream cache — large raw NIST files. The converted YAML
+# (config/catalog-nist-800-53-rev5.yaml) is the committed source of truth.
+config/oscal-cache/

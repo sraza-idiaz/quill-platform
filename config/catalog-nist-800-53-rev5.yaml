@@ -1,0 +1,4295 @@
+version: 1
+source_catalog: nist-800-53-rev5
+assessment_catalog: nist-800-53a-rev5
+baseline: moderate
+controls:
+- control_id: AC-1
+  family: AC
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: AC-2
+  family: AC
+  title: Account Management
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-2_obj.a
+    text: Account Management
+    required_methods:
+    - examine
+  required_fields:
+  - account_types
+  - responsible_role
+  - review_frequency
+  - enforcement_mechanism
+- control_id: AC-2(1)
+  family: AC
+  title: Automated System Account Management
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-2.1_SMT
+    text: 'Support the management of system accounts using {{ insert: param, ac-02.01_odp }}.'
+    required_methods:
+    - examine
+- control_id: AC-2(2)
+  family: AC
+  title: Automated Temporary and Emergency Account Management
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-2.2_SMT
+    text: 'Automatically {{ insert: param, ac-02.02_odp.01 }} temporary and emergency accounts after {{ insert: param, ac-02.02_odp.02
+      }}.'
+    required_methods:
+    - examine
+- control_id: AC-2(3)
+  family: AC
+  title: Disable Accounts
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-2.3_SMT
+    text: 'Disable accounts within {{ insert: param, ac-02.03_odp.01 }} when the accounts:'
+    required_methods:
+    - examine
+- control_id: AC-2(4)
+  family: AC
+  title: Automated Audit Actions
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-2.4_SMT
+    text: Automatically audit account creation, modification, enabling, disabling, and removal actions.
+    required_methods:
+    - examine
+- control_id: AC-2(5)
+  family: AC
+  title: Inactivity Logout
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-2.5_SMT
+    text: 'Require that users log out when {{ insert: param, ac-02.05_odp }}.'
+    required_methods:
+    - examine
+- control_id: AC-2(11)
+  family: AC
+  title: Usage Conditions
+  baselines:
+  - high
+  objectives:
+  - objective_id: AC-2.11_SMT
+    text: 'Enforce {{ insert: param, ac-02.11_odp.01 }} for {{ insert: param, ac-02.11_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: AC-2(12)
+  family: AC
+  title: Account Monitoring for Atypical Usage
+  baselines:
+  - high
+  objectives:
+  - objective_id: AC-2_12_obj.a
+    text: Account Monitoring for Atypical Usage
+    required_methods:
+    - examine
+- control_id: AC-2(13)
+  family: AC
+  title: Disable Accounts for High-risk Individuals
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-2.13_SMT
+    text: 'Disable accounts of individuals within {{ insert: param, ac-02.13_odp.01 }} of discovery of {{ insert: param, ac-02.13_odp.02
+      }}.'
+    required_methods:
+    - examine
+- control_id: AC-3
+  family: AC
+  title: Access Enforcement
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-3_SMT
+    text: Enforce approved authorizations for logical access to information and system resources in accordance with applicable
+      access control policies.
+    required_methods:
+    - examine
+- control_id: AC-4
+  family: AC
+  title: Information Flow Enforcement
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-4_SMT
+    text: 'Enforce approved authorizations for controlling the flow of information within the system and between connected
+      systems based on {{ insert: param, ac-04_odp }}.'
+    required_methods:
+    - examine
+- control_id: AC-4(4)
+  family: AC
+  title: Flow Control of Encrypted Information
+  baselines:
+  - high
+  objectives:
+  - objective_id: AC-4.4_SMT
+    text: 'Prevent encrypted information from bypassing {{ insert: param, ac-04.04_odp.01 }} by {{ insert: param, ac-04.04_odp.02
+      }}.'
+    required_methods:
+    - examine
+- control_id: AC-5
+  family: AC
+  title: Separation of Duties
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-5_obj.a
+    text: Separation of Duties
+    required_methods:
+    - examine
+- control_id: AC-6
+  family: AC
+  title: Least Privilege
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-6_SMT
+    text: Employ the principle of least privilege, allowing only authorized accesses for users (or processes acting on behalf
+      of users) that are necessary to accomplish assigned organizational tasks.
+    required_methods:
+    - examine
+- control_id: AC-6(1)
+  family: AC
+  title: Authorize Access to Security Functions
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-6.1_SMT
+    text: 'Authorize access for {{ insert: param, ac-06.01_odp.01 }} to:'
+    required_methods:
+    - examine
+- control_id: AC-6(2)
+  family: AC
+  title: Non-privileged Access for Nonsecurity Functions
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-6.2_SMT
+    text: 'Require that users of system accounts (or roles) with access to {{ insert: param, ac-06.02_odp }} use non-privileged
+      accounts or roles, when accessing nonsecurity functions.'
+    required_methods:
+    - examine
+- control_id: AC-6(3)
+  family: AC
+  title: Network Access to Privileged Commands
+  baselines:
+  - high
+  objectives:
+  - objective_id: AC-6.3_SMT
+    text: 'Authorize network access to {{ insert: param, ac-06.03_odp.01 }} only for {{ insert: param, ac-06.03_odp.02 }}
+      and document the rationale for such access in the security plan for the system.'
+    required_methods:
+    - examine
+- control_id: AC-6(5)
+  family: AC
+  title: Privileged Accounts
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-6.5_SMT
+    text: 'Restrict privileged accounts on the system to {{ insert: param, ac-06.05_odp }}.'
+    required_methods:
+    - examine
+- control_id: AC-6(7)
+  family: AC
+  title: Review of User Privileges
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-6_7_obj.a
+    text: Review of User Privileges
+    required_methods:
+    - examine
+- control_id: AC-6(9)
+  family: AC
+  title: Log Use of Privileged Functions
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-6.9_SMT
+    text: Log the execution of privileged functions.
+    required_methods:
+    - examine
+- control_id: AC-6(10)
+  family: AC
+  title: Prohibit Non-privileged Users from Executing Privileged Functions
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-6.10_SMT
+    text: Prevent non-privileged users from executing privileged functions.
+    required_methods:
+    - examine
+- control_id: AC-7
+  family: AC
+  title: Unsuccessful Logon Attempts
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-7_obj.a
+    text: Unsuccessful Logon Attempts
+    required_methods:
+    - examine
+- control_id: AC-8
+  family: AC
+  title: System Use Notification
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-8_obj.a
+    text: System Use Notification
+    required_methods:
+    - examine
+- control_id: AC-10
+  family: AC
+  title: Concurrent Session Control
+  baselines:
+  - high
+  objectives:
+  - objective_id: AC-10_SMT
+    text: 'Limit the number of concurrent sessions for each {{ insert: param, ac-10_odp.01 }} to {{ insert: param, ac-10_odp.02
+      }}.'
+    required_methods:
+    - examine
+- control_id: AC-11
+  family: AC
+  title: Device Lock
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-11_obj.a
+    text: Device Lock
+    required_methods:
+    - examine
+- control_id: AC-11(1)
+  family: AC
+  title: Pattern-hiding Displays
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-11.1_SMT
+    text: Conceal, via the device lock, information previously visible on the display with a publicly viewable image.
+    required_methods:
+    - examine
+- control_id: AC-12
+  family: AC
+  title: Session Termination
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-12_SMT
+    text: 'Automatically terminate a user session after {{ insert: param, ac-12_odp }}.'
+    required_methods:
+    - examine
+- control_id: AC-14
+  family: AC
+  title: Permitted Actions Without Identification or Authentication
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-14_obj.a
+    text: Permitted Actions Without Identification or Authentication
+    required_methods:
+    - examine
+- control_id: AC-17
+  family: AC
+  title: Remote Access
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-17_obj.a
+    text: Remote Access
+    required_methods:
+    - examine
+- control_id: AC-17(1)
+  family: AC
+  title: Monitoring and Control
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-17.1_SMT
+    text: Employ automated mechanisms to monitor and control remote access methods.
+    required_methods:
+    - examine
+- control_id: AC-17(2)
+  family: AC
+  title: Protection of Confidentiality and Integrity Using Encryption
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-17.2_SMT
+    text: Implement cryptographic mechanisms to protect the confidentiality and integrity of remote access sessions.
+    required_methods:
+    - examine
+- control_id: AC-17(3)
+  family: AC
+  title: Managed Access Control Points
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-17.3_SMT
+    text: Route remote accesses through authorized and managed network access control points.
+    required_methods:
+    - examine
+- control_id: AC-17(4)
+  family: AC
+  title: Privileged Commands and Access
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-17_4_obj.a
+    text: Privileged Commands and Access
+    required_methods:
+    - examine
+- control_id: AC-18
+  family: AC
+  title: Wireless Access
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-18_obj.a
+    text: Wireless Access
+    required_methods:
+    - examine
+- control_id: AC-18(1)
+  family: AC
+  title: Authentication and Encryption
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-18.1_SMT
+    text: 'Protect wireless access to the system using authentication of {{ insert: param, ac-18.01_odp }} and encryption.'
+    required_methods:
+    - examine
+- control_id: AC-18(3)
+  family: AC
+  title: Disable Wireless Networking
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-18.3_SMT
+    text: Disable, when not intended for use, wireless networking capabilities embedded within system components prior to
+      issuance and deployment.
+    required_methods:
+    - examine
+- control_id: AC-18(4)
+  family: AC
+  title: Restrict Configurations by Users
+  baselines:
+  - high
+  objectives:
+  - objective_id: AC-18.4_SMT
+    text: Identify and explicitly authorize users allowed to independently configure wireless networking capabilities.
+    required_methods:
+    - examine
+- control_id: AC-18(5)
+  family: AC
+  title: Antennas and Transmission Power Levels
+  baselines:
+  - high
+  objectives:
+  - objective_id: AC-18.5_SMT
+    text: Select radio antennas and calibrate transmission power levels to reduce the probability that signals from wireless
+      access points can be received outside of organization-controlled boundaries.
+    required_methods:
+    - examine
+- control_id: AC-19
+  family: AC
+  title: Access Control for Mobile Devices
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-19_obj.a
+    text: Access Control for Mobile Devices
+    required_methods:
+    - examine
+- control_id: AC-19(5)
+  family: AC
+  title: Full Device or Container-based Encryption
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-19.5_SMT
+    text: 'Employ {{ insert: param, ac-19.05_odp.01 }} to protect the confidentiality and integrity of information on {{ insert:
+      param, ac-19.05_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: AC-20
+  family: AC
+  title: Use of External Systems
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-20_obj.a
+    text: Use of External Systems
+    required_methods:
+    - examine
+- control_id: AC-20(1)
+  family: AC
+  title: Limits on Authorized Use
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-20.1_SMT
+    text: 'Permit authorized individuals to use an external system to access the system or to process, store, or transmit
+      organization-controlled information only after:'
+    required_methods:
+    - examine
+- control_id: AC-20(2)
+  family: AC
+  title: "Portable Storage Devices \u2014 Restricted Use"
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-20.2_SMT
+    text: 'Restrict the use of organization-controlled portable storage devices by authorized individuals on external systems
+      using {{ insert: param, ac-20.02_odp }}.'
+    required_methods:
+    - examine
+- control_id: AC-21
+  family: AC
+  title: Information Sharing
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-21_obj.a
+    text: Information Sharing
+    required_methods:
+    - examine
+- control_id: AC-22
+  family: AC
+  title: Publicly Accessible Content
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AC-22_obj.a
+    text: Publicly Accessible Content
+    required_methods:
+    - examine
+- control_id: AT-1
+  family: AT
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AT-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: AT-2
+  family: AT
+  title: Literacy Training and Awareness
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AT-2_obj.a
+    text: Literacy Training and Awareness
+    required_methods:
+    - examine
+- control_id: AT-2(2)
+  family: AT
+  title: Insider Threat
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AT-2.2_SMT
+    text: Provide literacy training on recognizing and reporting potential indicators of insider threat.
+    required_methods:
+    - examine
+- control_id: AT-2(3)
+  family: AT
+  title: Social Engineering and Mining
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AT-2.3_SMT
+    text: Provide literacy training on recognizing and reporting potential and actual instances of social engineering and
+      social mining.
+    required_methods:
+    - examine
+- control_id: AT-3
+  family: AT
+  title: Role-based Training
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AT-3_obj.a
+    text: Role-based Training
+    required_methods:
+    - examine
+- control_id: AT-4
+  family: AT
+  title: Training Records
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AT-4_obj.a
+    text: Training Records
+    required_methods:
+    - examine
+- control_id: AU-1
+  family: AU
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: AU-2
+  family: AU
+  title: Event Logging
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-2_obj.a
+    text: Event Logging
+    required_methods:
+    - examine
+  required_fields:
+  - event_types
+  - review_mechanism
+- control_id: AU-3
+  family: AU
+  title: Content of Audit Records
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-3_SMT
+    text: 'Ensure that audit records contain information that establishes the following:'
+    required_methods:
+    - examine
+- control_id: AU-3(1)
+  family: AU
+  title: Additional Audit Information
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-3.1_SMT
+    text: 'Generate audit records containing the following additional information: {{ insert: param, au-03.01_odp }}.'
+    required_methods:
+    - examine
+- control_id: AU-4
+  family: AU
+  title: Audit Log Storage Capacity
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-4_SMT
+    text: 'Allocate audit log storage capacity to accommodate {{ insert: param, au-04_odp }}.'
+    required_methods:
+    - examine
+- control_id: AU-5
+  family: AU
+  title: Response to Audit Logging Process Failures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-5_obj.a
+    text: Response to Audit Logging Process Failures
+    required_methods:
+    - examine
+- control_id: AU-5(1)
+  family: AU
+  title: Storage Capacity Warning
+  baselines:
+  - high
+  objectives:
+  - objective_id: AU-5.1_SMT
+    text: 'Provide a warning to {{ insert: param, au-05.01_odp.01 }} within {{ insert: param, au-05.01_odp.02 }} when allocated
+      audit log storage volume reaches {{ insert: param, au-05.01_odp.03 }} of repository maximum audit log storage capacity.'
+    required_methods:
+    - examine
+- control_id: AU-5(2)
+  family: AU
+  title: Real-time Alerts
+  baselines:
+  - high
+  objectives:
+  - objective_id: AU-5.2_SMT
+    text: 'Provide an alert within {{ insert: param, au-05.02_odp.01 }} to {{ insert: param, au-05.02_odp.02 }} when the following
+      audit failure events occur: {{ insert: param, au-05.02_odp.03 }}.'
+    required_methods:
+    - examine
+- control_id: AU-6
+  family: AU
+  title: Audit Record Review, Analysis, and Reporting
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-6_obj.a
+    text: Audit Record Review, Analysis, and Reporting
+    required_methods:
+    - examine
+- control_id: AU-6(1)
+  family: AU
+  title: Automated Process Integration
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-6.1_SMT
+    text: 'Integrate audit record review, analysis, and reporting processes using {{ insert: param, au-06.01_odp }}.'
+    required_methods:
+    - examine
+- control_id: AU-6(3)
+  family: AU
+  title: Correlate Audit Record Repositories
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-6.3_SMT
+    text: Analyze and correlate audit records across different repositories to gain organization-wide situational awareness.
+    required_methods:
+    - examine
+- control_id: AU-6(5)
+  family: AU
+  title: Integrated Analysis of Audit Records
+  baselines:
+  - high
+  objectives:
+  - objective_id: AU-6.5_SMT
+    text: 'Integrate analysis of audit records with analysis of {{ insert: param, au-06.05_odp.01 }} to further enhance the
+      ability to identify inappropriate or unusual activity.'
+    required_methods:
+    - examine
+- control_id: AU-6(6)
+  family: AU
+  title: Correlation with Physical Monitoring
+  baselines:
+  - high
+  objectives:
+  - objective_id: AU-6.6_SMT
+    text: Correlate information from audit records with information obtained from monitoring physical access to further enhance
+      the ability to identify suspicious, inappropriate, unusual, or malevolent activity.
+    required_methods:
+    - examine
+- control_id: AU-7
+  family: AU
+  title: Audit Record Reduction and Report Generation
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-7_SMT
+    text: 'Provide and implement an audit record reduction and report generation capability that:'
+    required_methods:
+    - examine
+- control_id: AU-7(1)
+  family: AU
+  title: Automatic Processing
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-7.1_SMT
+    text: 'Provide and implement the capability to process, sort, and search audit records for events of interest based on
+      the following content: {{ insert: param, au-07.01_odp }}.'
+    required_methods:
+    - examine
+- control_id: AU-8
+  family: AU
+  title: Time Stamps
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-8_obj.a
+    text: Time Stamps
+    required_methods:
+    - examine
+- control_id: AU-9
+  family: AU
+  title: Protection of Audit Information
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-9_obj.a
+    text: Protection of Audit Information
+    required_methods:
+    - examine
+- control_id: AU-9(2)
+  family: AU
+  title: Store on Separate Physical Systems or Components
+  baselines:
+  - high
+  objectives:
+  - objective_id: AU-9.2_SMT
+    text: 'Store audit records {{ insert: param, au-09.02_odp }} in a repository that is part of a physically different system
+      or system component than the system or component being audited.'
+    required_methods:
+    - examine
+- control_id: AU-9(3)
+  family: AU
+  title: Cryptographic Protection
+  baselines:
+  - high
+  objectives:
+  - objective_id: AU-9.3_SMT
+    text: Implement cryptographic mechanisms to protect the integrity of audit information and audit tools.
+    required_methods:
+    - examine
+- control_id: AU-9(4)
+  family: AU
+  title: Access by Subset of Privileged Users
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-9.4_SMT
+    text: 'Authorize access to management of audit logging functionality to only {{ insert: param, au-09.04_odp }}.'
+    required_methods:
+    - examine
+- control_id: AU-10
+  family: AU
+  title: Non-repudiation
+  baselines:
+  - high
+  objectives:
+  - objective_id: AU-10_SMT
+    text: 'Provide irrefutable evidence that an individual (or process acting on behalf of an individual) has performed {{
+      insert: param, au-10_odp }}.'
+    required_methods:
+    - examine
+- control_id: AU-11
+  family: AU
+  title: Audit Record Retention
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-11_SMT
+    text: 'Retain audit records for {{ insert: param, au-11_odp }} to provide support for after-the-fact investigations of
+      incidents and to meet regulatory and organizational information retention requirements.'
+    required_methods:
+    - examine
+- control_id: AU-12
+  family: AU
+  title: Audit Record Generation
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: AU-12_obj.a
+    text: Audit Record Generation
+    required_methods:
+    - examine
+- control_id: AU-12(1)
+  family: AU
+  title: System-wide and Time-correlated Audit Trail
+  baselines:
+  - high
+  objectives:
+  - objective_id: AU-12.1_SMT
+    text: 'Compile audit records from {{ insert: param, au-12.01_odp.01 }} into a system-wide (logical or physical) audit
+      trail that is time-correlated to within {{ insert: param, au-12.01_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: AU-12(3)
+  family: AU
+  title: Changes by Authorized Individuals
+  baselines:
+  - high
+  objectives:
+  - objective_id: AU-12.3_SMT
+    text: 'Provide and implement the capability for {{ insert: param, au-12.03_odp.01 }} to change the logging to be performed
+      on {{ insert: param, au-12.03_odp.02 }} based on {{ insert: param, au-12.03_odp.03 }} within {{ insert: param, au-12.03_odp.04
+      }}.'
+    required_methods:
+    - examine
+- control_id: CA-1
+  family: CA
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CA-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: CA-2
+  family: CA
+  title: Control Assessments
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CA-2_obj.a
+    text: Control Assessments
+    required_methods:
+    - examine
+- control_id: CA-2(1)
+  family: CA
+  title: Independent Assessors
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CA-2.1_SMT
+    text: Employ independent assessors or assessment teams to conduct control assessments.
+    required_methods:
+    - examine
+- control_id: CA-2(2)
+  family: CA
+  title: Specialized Assessments
+  baselines:
+  - high
+  objectives:
+  - objective_id: CA-2.2_SMT
+    text: 'Include as part of control assessments, {{ insert: param, ca-02.02_odp.01 }}, {{ insert: param, ca-02.02_odp.02
+      }}, {{ insert: param, ca-02.02_odp.03 }}.'
+    required_methods:
+    - examine
+- control_id: CA-3
+  family: CA
+  title: Information Exchange
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CA-3_obj.a
+    text: Information Exchange
+    required_methods:
+    - examine
+- control_id: CA-3(6)
+  family: CA
+  title: Transfer Authorizations
+  baselines:
+  - high
+  objectives:
+  - objective_id: CA-3.6_SMT
+    text: Verify that individuals or systems transferring data between interconnecting systems have the requisite authorizations
+      (i.e., write permissions or privileges) prior to accepting such data.
+    required_methods:
+    - examine
+- control_id: CA-5
+  family: CA
+  title: Plan of Action and Milestones
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CA-5_obj.a
+    text: Plan of Action and Milestones
+    required_methods:
+    - examine
+- control_id: CA-6
+  family: CA
+  title: Authorization
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CA-6_obj.a
+    text: Authorization
+    required_methods:
+    - examine
+- control_id: CA-7
+  family: CA
+  title: Continuous Monitoring
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CA-7_SMT
+    text: 'Develop a system-level continuous monitoring strategy and implement continuous monitoring in accordance with the
+      organization-level continuous monitoring strategy that includes:'
+    required_methods:
+    - examine
+- control_id: CA-7(1)
+  family: CA
+  title: Independent Assessment
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CA-7.1_SMT
+    text: Employ independent assessors or assessment teams to monitor the controls in the system on an ongoing basis.
+    required_methods:
+    - examine
+- control_id: CA-7(4)
+  family: CA
+  title: Risk Monitoring
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CA-7.4_SMT
+    text: 'Ensure risk monitoring is an integral part of the continuous monitoring strategy that includes the following:'
+    required_methods:
+    - examine
+- control_id: CA-8
+  family: CA
+  title: Penetration Testing
+  baselines:
+  - high
+  objectives:
+  - objective_id: CA-8_SMT
+    text: 'Conduct penetration testing {{ insert: param, ca-08_odp.01 }} on {{ insert: param, ca-08_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: CA-8(1)
+  family: CA
+  title: Independent Penetration Testing Agent or Team
+  baselines:
+  - high
+  objectives:
+  - objective_id: CA-8.1_SMT
+    text: Employ an independent penetration testing agent or team to perform penetration testing on the system or system components.
+    required_methods:
+    - examine
+- control_id: CA-9
+  family: CA
+  title: Internal System Connections
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CA-9_obj.a
+    text: Internal System Connections
+    required_methods:
+    - examine
+- control_id: CM-1
+  family: CM
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: CM-2
+  family: CM
+  title: Baseline Configuration
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-2_obj.a
+    text: Baseline Configuration
+    required_methods:
+    - examine
+  required_fields:
+  - baseline_reference
+  - change_control
+- control_id: CM-2(2)
+  family: CM
+  title: Automation Support for Accuracy and Currency
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-2.2_SMT
+    text: 'Maintain the currency, completeness, accuracy, and availability of the baseline configuration of the system using
+      {{ insert: param, cm-02.02_odp }}.'
+    required_methods:
+    - examine
+- control_id: CM-2(3)
+  family: CM
+  title: Retention of Previous Configurations
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-2.3_SMT
+    text: 'Retain {{ insert: param, cm-02.03_odp }} of previous versions of baseline configurations of the system to support
+      rollback.'
+    required_methods:
+    - examine
+- control_id: CM-2(7)
+  family: CM
+  title: Configure Systems and Components for High-risk Areas
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-2_7_obj.a
+    text: Configure Systems and Components for High-risk Areas
+    required_methods:
+    - examine
+- control_id: CM-3
+  family: CM
+  title: Configuration Change Control
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-3_obj.a
+    text: Configuration Change Control
+    required_methods:
+    - examine
+- control_id: CM-3(1)
+  family: CM
+  title: Automated Documentation, Notification, and Prohibition of Changes
+  baselines:
+  - high
+  objectives:
+  - objective_id: CM-3.1_SMT
+    text: 'Use {{ insert: param, cm-03.01_odp.01 }} to:'
+    required_methods:
+    - examine
+- control_id: CM-3(2)
+  family: CM
+  title: Testing, Validation, and Documentation of Changes
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-3.2_SMT
+    text: Test, validate, and document changes to the system before finalizing the implementation of the changes.
+    required_methods:
+    - examine
+- control_id: CM-3(4)
+  family: CM
+  title: Security and Privacy Representatives
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-3.4_SMT
+    text: 'Require {{ insert: param, cm-3.4_prm_1 }} to be members of the {{ insert: param, cm-03.04_odp.03 }}.'
+    required_methods:
+    - examine
+- control_id: CM-3(6)
+  family: CM
+  title: Cryptography Management
+  baselines:
+  - high
+  objectives:
+  - objective_id: CM-3.6_SMT
+    text: 'Ensure that cryptographic mechanisms used to provide the following controls are under configuration management:
+      {{ insert: param, cm-03.06_odp }}.'
+    required_methods:
+    - examine
+- control_id: CM-4
+  family: CM
+  title: Impact Analyses
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-4_SMT
+    text: Analyze changes to the system to determine potential security and privacy impacts prior to change implementation.
+    required_methods:
+    - examine
+- control_id: CM-4(1)
+  family: CM
+  title: Separate Test Environments
+  baselines:
+  - high
+  objectives:
+  - objective_id: CM-4.1_SMT
+    text: Analyze changes to the system in a separate test environment before implementation in an operational environment,
+      looking for security and privacy impacts due to flaws, weaknesses, incompatibility, or intentional malice.
+    required_methods:
+    - examine
+- control_id: CM-4(2)
+  family: CM
+  title: Verification of Controls
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-4.2_SMT
+    text: After system changes, verify that the impacted controls are implemented correctly, operating as intended, and producing
+      the desired outcome with regard to meeting the security and privacy requirements for the system.
+    required_methods:
+    - examine
+- control_id: CM-5
+  family: CM
+  title: Access Restrictions for Change
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-5_SMT
+    text: Define, document, approve, and enforce physical and logical access restrictions associated with changes to the system.
+    required_methods:
+    - examine
+- control_id: CM-5(1)
+  family: CM
+  title: Automated Access Enforcement and Audit Records
+  baselines:
+  - high
+  objectives:
+  - objective_id: CM-5_1_obj.a
+    text: Automated Access Enforcement and Audit Records
+    required_methods:
+    - examine
+- control_id: CM-6
+  family: CM
+  title: Configuration Settings
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-6_obj.a
+    text: Configuration Settings
+    required_methods:
+    - examine
+- control_id: CM-6(1)
+  family: CM
+  title: Automated Management, Application, and Verification
+  baselines:
+  - high
+  objectives:
+  - objective_id: CM-6.1_SMT
+    text: 'Manage, apply, and verify configuration settings for {{ insert: param, cm-06.01_odp.01 }} using {{ insert: param,
+      cm-6.1_prm_2 }}.'
+    required_methods:
+    - examine
+- control_id: CM-6(2)
+  family: CM
+  title: Respond to Unauthorized Changes
+  baselines:
+  - high
+  objectives:
+  - objective_id: CM-6.2_SMT
+    text: 'Take the following actions in response to unauthorized changes to {{ insert: param, cm-06.02_odp.02 }}: {{ insert:
+      param, cm-06.02_odp.01 }}.'
+    required_methods:
+    - examine
+- control_id: CM-7
+  family: CM
+  title: Least Functionality
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-7_obj.a
+    text: Least Functionality
+    required_methods:
+    - examine
+- control_id: CM-7(1)
+  family: CM
+  title: Periodic Review
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-7_1_obj.a
+    text: Periodic Review
+    required_methods:
+    - examine
+- control_id: CM-7(2)
+  family: CM
+  title: Prevent Program Execution
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-7.2_SMT
+    text: 'Prevent program execution in accordance with {{ insert: param, cm-07.02_odp.01 }}.'
+    required_methods:
+    - examine
+- control_id: CM-7(5)
+  family: CM
+  title: "Authorized Software \u2014 Allow-by-exception"
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-7_5_obj.a
+    text: "Authorized Software \u2014 Allow-by-exception"
+    required_methods:
+    - examine
+- control_id: CM-8
+  family: CM
+  title: System Component Inventory
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-8_obj.a
+    text: System Component Inventory
+    required_methods:
+    - examine
+- control_id: CM-8(1)
+  family: CM
+  title: Updates During Installation and Removal
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-8.1_SMT
+    text: Update the inventory of system components as part of component installations, removals, and system updates.
+    required_methods:
+    - examine
+- control_id: CM-8(2)
+  family: CM
+  title: Automated Maintenance
+  baselines:
+  - high
+  objectives:
+  - objective_id: CM-8.2_SMT
+    text: 'Maintain the currency, completeness, accuracy, and availability of the inventory of system components using {{
+      insert: param, cm-8.2_prm_1 }}.'
+    required_methods:
+    - examine
+- control_id: CM-8(3)
+  family: CM
+  title: Automated Unauthorized Component Detection
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-8_3_obj.a
+    text: Automated Unauthorized Component Detection
+    required_methods:
+    - examine
+- control_id: CM-8(4)
+  family: CM
+  title: Accountability Information
+  baselines:
+  - high
+  objectives:
+  - objective_id: CM-8.4_SMT
+    text: 'Include in the system component inventory information, a means for identifying by {{ insert: param, cm-08.04_odp
+      }} , individuals responsible and accountable for administering those components.'
+    required_methods:
+    - examine
+- control_id: CM-9
+  family: CM
+  title: Configuration Management Plan
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-9_SMT
+    text: 'Develop, document, and implement a configuration management plan for the system that:'
+    required_methods:
+    - examine
+- control_id: CM-10
+  family: CM
+  title: Software Usage Restrictions
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-10_obj.a
+    text: Software Usage Restrictions
+    required_methods:
+    - examine
+- control_id: CM-11
+  family: CM
+  title: User-installed Software
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-11_obj.a
+    text: User-installed Software
+    required_methods:
+    - examine
+- control_id: CM-12
+  family: CM
+  title: Information Location
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-12_obj.a
+    text: Information Location
+    required_methods:
+    - examine
+- control_id: CM-12(1)
+  family: CM
+  title: Automated Tools to Support Information Location
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CM-12.1_SMT
+    text: 'Use automated tools to identify {{ insert: param, cm-12.01_odp.01 }} on {{ insert: param, cm-12.01_odp.02 }} to
+      ensure controls are in place to protect organizational information and individual privacy.'
+    required_methods:
+    - examine
+- control_id: CP-1
+  family: CP
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: CP-2
+  family: CP
+  title: Contingency Plan
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-2_obj.a
+    text: Contingency Plan
+    required_methods:
+    - examine
+- control_id: CP-2(1)
+  family: CP
+  title: Coordinate with Related Plans
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-2.1_SMT
+    text: Coordinate contingency plan development with organizational elements responsible for related plans.
+    required_methods:
+    - examine
+- control_id: CP-2(2)
+  family: CP
+  title: Capacity Planning
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-2.2_SMT
+    text: Conduct capacity planning so that necessary capacity for information processing, telecommunications, and environmental
+      support exists during contingency operations.
+    required_methods:
+    - examine
+- control_id: CP-2(3)
+  family: CP
+  title: Resume Mission and Business Functions
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-2.3_SMT
+    text: 'Plan for the resumption of {{ insert: param, cp-02.03_odp.01 }} mission and business functions within {{ insert:
+      param, cp-02.03_odp.02 }} of contingency plan activation.'
+    required_methods:
+    - examine
+- control_id: CP-2(5)
+  family: CP
+  title: Continue Mission and Business Functions
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-2.5_SMT
+    text: 'Plan for the continuance of {{ insert: param, cp-02.05_odp }} mission and business functions with minimal or no
+      loss of operational continuity and sustains that continuity until full system restoration at primary processing and/or
+      storage sites.'
+    required_methods:
+    - examine
+- control_id: CP-2(8)
+  family: CP
+  title: Identify Critical Assets
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-2.8_SMT
+    text: 'Identify critical system assets supporting {{ insert: param, cp-02.08_odp }} mission and business functions.'
+    required_methods:
+    - examine
+- control_id: CP-3
+  family: CP
+  title: Contingency Training
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-3_obj.a
+    text: Contingency Training
+    required_methods:
+    - examine
+- control_id: CP-3(1)
+  family: CP
+  title: Simulated Events
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-3.1_SMT
+    text: Incorporate simulated events into contingency training to facilitate effective response by personnel in crisis situations.
+    required_methods:
+    - examine
+- control_id: CP-4
+  family: CP
+  title: Contingency Plan Testing
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-4_obj.a
+    text: Contingency Plan Testing
+    required_methods:
+    - examine
+- control_id: CP-4(1)
+  family: CP
+  title: Coordinate with Related Plans
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-4.1_SMT
+    text: Coordinate contingency plan testing with organizational elements responsible for related plans.
+    required_methods:
+    - examine
+- control_id: CP-4(2)
+  family: CP
+  title: Alternate Processing Site
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-4.2_SMT
+    text: 'Test the contingency plan at the alternate processing site:'
+    required_methods:
+    - examine
+- control_id: CP-6
+  family: CP
+  title: Alternate Storage Site
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-6_obj.a
+    text: Alternate Storage Site
+    required_methods:
+    - examine
+- control_id: CP-6(1)
+  family: CP
+  title: Separation from Primary Site
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-6.1_SMT
+    text: Identify an alternate storage site that is sufficiently separated from the primary storage site to reduce susceptibility
+      to the same threats.
+    required_methods:
+    - examine
+- control_id: CP-6(2)
+  family: CP
+  title: Recovery Time and Recovery Point Objectives
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-6.2_SMT
+    text: Configure the alternate storage site to facilitate recovery operations in accordance with recovery time and recovery
+      point objectives.
+    required_methods:
+    - examine
+- control_id: CP-6(3)
+  family: CP
+  title: Accessibility
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-6.3_SMT
+    text: Identify potential accessibility problems to the alternate storage site in the event of an area-wide disruption
+      or disaster and outline explicit mitigation actions.
+    required_methods:
+    - examine
+- control_id: CP-7
+  family: CP
+  title: Alternate Processing Site
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-7_obj.a
+    text: Alternate Processing Site
+    required_methods:
+    - examine
+- control_id: CP-7(1)
+  family: CP
+  title: Separation from Primary Site
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-7.1_SMT
+    text: Identify an alternate processing site that is sufficiently separated from the primary processing site to reduce
+      susceptibility to the same threats.
+    required_methods:
+    - examine
+- control_id: CP-7(2)
+  family: CP
+  title: Accessibility
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-7.2_SMT
+    text: Identify potential accessibility problems to alternate processing sites in the event of an area-wide disruption
+      or disaster and outlines explicit mitigation actions.
+    required_methods:
+    - examine
+- control_id: CP-7(3)
+  family: CP
+  title: Priority of Service
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-7.3_SMT
+    text: Develop alternate processing site agreements that contain priority-of-service provisions in accordance with availability
+      requirements (including recovery time objectives).
+    required_methods:
+    - examine
+- control_id: CP-7(4)
+  family: CP
+  title: Preparation for Use
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-7.4_SMT
+    text: Prepare the alternate processing site so that the site can serve as the operational site supporting essential mission
+      and business functions.
+    required_methods:
+    - examine
+- control_id: CP-8
+  family: CP
+  title: Telecommunications Services
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-8_SMT
+    text: 'Establish alternate telecommunications services, including necessary agreements to permit the resumption of {{
+      insert: param, cp-08_odp.01 }} for essential mission and business functions within {{ insert: param, cp-08_odp.02 }}
+      when the primary telecommunications capabilities are unavailable at either the primary or alternate processing or storage
+      sites.'
+    required_methods:
+    - examine
+- control_id: CP-8(1)
+  family: CP
+  title: Priority of Service Provisions
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-8_1_obj.a
+    text: Priority of Service Provisions
+    required_methods:
+    - examine
+- control_id: CP-8(2)
+  family: CP
+  title: Single Points of Failure
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-8.2_SMT
+    text: Obtain alternate telecommunications services to reduce the likelihood of sharing a single point of failure with
+      primary telecommunications services.
+    required_methods:
+    - examine
+- control_id: CP-8(3)
+  family: CP
+  title: Separation of Primary and Alternate Providers
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-8.3_SMT
+    text: Obtain alternate telecommunications services from providers that are separated from primary service providers to
+      reduce susceptibility to the same threats.
+    required_methods:
+    - examine
+- control_id: CP-8(4)
+  family: CP
+  title: Provider Contingency Plan
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-8_4_obj.a
+    text: Provider Contingency Plan
+    required_methods:
+    - examine
+- control_id: CP-9
+  family: CP
+  title: System Backup
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-9_obj.a
+    text: System Backup
+    required_methods:
+    - examine
+- control_id: CP-9(1)
+  family: CP
+  title: Testing for Reliability and Integrity
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-9.1_SMT
+    text: 'Test backup information {{ insert: param, cp-9.1_prm_1 }} to verify media reliability and information integrity.'
+    required_methods:
+    - examine
+- control_id: CP-9(2)
+  family: CP
+  title: Test Restoration Using Sampling
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-9.2_SMT
+    text: Use a sample of backup information in the restoration of selected system functions as part of contingency plan testing.
+    required_methods:
+    - examine
+- control_id: CP-9(3)
+  family: CP
+  title: Separate Storage for Critical Information
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-9.3_SMT
+    text: 'Store backup copies of {{ insert: param, cp-09.03_odp }} in a separate facility or in a fire rated container that
+      is not collocated with the operational system.'
+    required_methods:
+    - examine
+- control_id: CP-9(5)
+  family: CP
+  title: Transfer to Alternate Storage Site
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-9.5_SMT
+    text: 'Transfer system backup information to the alternate storage site {{ insert: param, cp-9.5_prm_1 }}.'
+    required_methods:
+    - examine
+- control_id: CP-9(8)
+  family: CP
+  title: Cryptographic Protection
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-9.8_SMT
+    text: 'Implement cryptographic mechanisms to prevent unauthorized disclosure and modification of {{ insert: param, cp-09.08_odp
+      }}.'
+    required_methods:
+    - examine
+- control_id: CP-10
+  family: CP
+  title: System Recovery and Reconstitution
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-10_SMT
+    text: 'Provide for the recovery and reconstitution of the system to a known state within {{ insert: param, cp-10_prm_1
+      }} after a disruption, compromise, or failure.'
+    required_methods:
+    - examine
+- control_id: CP-10(2)
+  family: CP
+  title: Transaction Recovery
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: CP-10.2_SMT
+    text: Implement transaction recovery for systems that are transaction-based.
+    required_methods:
+    - examine
+- control_id: CP-10(4)
+  family: CP
+  title: Restore Within Time Period
+  baselines:
+  - high
+  objectives:
+  - objective_id: CP-10.4_SMT
+    text: 'Provide the capability to restore system components within {{ insert: param, cp-10.04_odp }} from configuration-controlled
+      and integrity-protected information representing a known, operational state for the components.'
+    required_methods:
+    - examine
+- control_id: IA-1
+  family: IA
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: IA-2
+  family: IA
+  title: Identification and Authentication (Organizational Users)
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-2_SMT
+    text: Uniquely identify and authenticate organizational users and associate that unique identification with processes
+      acting on behalf of those users.
+    required_methods:
+    - examine
+  required_fields:
+  - authenticator_types
+  - mfa_scope
+- control_id: IA-2(1)
+  family: IA
+  title: Multi-factor Authentication to Privileged Accounts
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-2.1_SMT
+    text: Implement multi-factor authentication for access to privileged accounts.
+    required_methods:
+    - examine
+- control_id: IA-2(2)
+  family: IA
+  title: Multi-factor Authentication to Non-privileged Accounts
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-2.2_SMT
+    text: Implement multi-factor authentication for access to non-privileged accounts.
+    required_methods:
+    - examine
+- control_id: IA-2(5)
+  family: IA
+  title: Individual Authentication with Group Authentication
+  baselines:
+  - high
+  objectives:
+  - objective_id: IA-2.5_SMT
+    text: When shared accounts or authenticators are employed, require users to be individually authenticated before granting
+      access to the shared accounts or resources.
+    required_methods:
+    - examine
+- control_id: IA-2(8)
+  family: IA
+  title: "Access to Accounts \u2014 Replay Resistant"
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-2.8_SMT
+    text: 'Implement replay-resistant authentication mechanisms for access to {{ insert: param, ia-02.08_odp }}.'
+    required_methods:
+    - examine
+- control_id: IA-2(12)
+  family: IA
+  title: Acceptance of PIV Credentials
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-2.12_SMT
+    text: Accept and electronically verify Personal Identity Verification-compliant credentials.
+    required_methods:
+    - examine
+- control_id: IA-3
+  family: IA
+  title: Device Identification and Authentication
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-3_SMT
+    text: 'Uniquely identify and authenticate {{ insert: param, ia-03_odp.01 }} before establishing a {{ insert: param, ia-03_odp.02
+      }} connection.'
+    required_methods:
+    - examine
+- control_id: IA-4
+  family: IA
+  title: Identifier Management
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-4_SMT
+    text: 'Manage system identifiers by:'
+    required_methods:
+    - examine
+- control_id: IA-4(4)
+  family: IA
+  title: Identify User Status
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-4.4_SMT
+    text: 'Manage individual identifiers by uniquely identifying each individual as {{ insert: param, ia-04.04_odp }}.'
+    required_methods:
+    - examine
+- control_id: IA-5
+  family: IA
+  title: Authenticator Management
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-5_SMT
+    text: 'Manage system authenticators by:'
+    required_methods:
+    - examine
+- control_id: IA-5(1)
+  family: IA
+  title: Password-based Authentication
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-5.1_SMT
+    text: 'For password-based authentication:'
+    required_methods:
+    - examine
+- control_id: IA-5(2)
+  family: IA
+  title: Public Key-based Authentication
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-5_2_obj.a
+    text: Public Key-based Authentication
+    required_methods:
+    - examine
+- control_id: IA-5(6)
+  family: IA
+  title: Protection of Authenticators
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-5.6_SMT
+    text: Protect authenticators commensurate with the security category of the information to which use of the authenticator
+      permits access.
+    required_methods:
+    - examine
+- control_id: IA-6
+  family: IA
+  title: Authentication Feedback
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-6_SMT
+    text: Obscure feedback of authentication information during the authentication process to protect the information from
+      possible exploitation and use by unauthorized individuals.
+    required_methods:
+    - examine
+- control_id: IA-7
+  family: IA
+  title: Cryptographic Module Authentication
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-7_SMT
+    text: Implement mechanisms for authentication to a cryptographic module that meet the requirements of applicable laws,
+      executive orders, directives, policies, regulations, standards, and guidelines for such authentication.
+    required_methods:
+    - examine
+- control_id: IA-8
+  family: IA
+  title: Identification and Authentication (Non-organizational Users)
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-8_SMT
+    text: Uniquely identify and authenticate non-organizational users or processes acting on behalf of non-organizational
+      users.
+    required_methods:
+    - examine
+- control_id: IA-8(1)
+  family: IA
+  title: Acceptance of PIV Credentials from Other Agencies
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-8.1_SMT
+    text: Accept and electronically verify Personal Identity Verification-compliant credentials from other federal agencies.
+    required_methods:
+    - examine
+- control_id: IA-8(2)
+  family: IA
+  title: Acceptance of External Authenticators
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-8_2_obj.a
+    text: Acceptance of External Authenticators
+    required_methods:
+    - examine
+- control_id: IA-8(4)
+  family: IA
+  title: Use of Defined Profiles
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-8.4_SMT
+    text: 'Conform to the following profiles for identity management {{ insert: param, ia-08.04_odp }}.'
+    required_methods:
+    - examine
+- control_id: IA-11
+  family: IA
+  title: Re-authentication
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-11_SMT
+    text: 'Require users to re-authenticate when {{ insert: param, ia-11_odp }}.'
+    required_methods:
+    - examine
+- control_id: IA-12
+  family: IA
+  title: Identity Proofing
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-12_obj.a
+    text: Identity Proofing
+    required_methods:
+    - examine
+- control_id: IA-12(2)
+  family: IA
+  title: Identity Evidence
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-12.2_SMT
+    text: Require evidence of individual identification be presented to the registration authority.
+    required_methods:
+    - examine
+- control_id: IA-12(3)
+  family: IA
+  title: Identity Evidence Validation and Verification
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-12.3_SMT
+    text: 'Require that the presented identity evidence be validated and verified through {{ insert: param, ia-12.03_odp }}.'
+    required_methods:
+    - examine
+- control_id: IA-12(4)
+  family: IA
+  title: In-person Validation and Verification
+  baselines:
+  - high
+  objectives:
+  - objective_id: IA-12.4_SMT
+    text: Require that the validation and verification of identity evidence be conducted in person before a designated registration
+      authority.
+    required_methods:
+    - examine
+- control_id: IA-12(5)
+  family: IA
+  title: Address Confirmation
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IA-12.5_SMT
+    text: 'Require that a {{ insert: param, ia-12.05_odp }} be delivered through an out-of-band channel to verify the users
+      address (physical or digital) of record.'
+    required_methods:
+    - examine
+- control_id: IR-1
+  family: IR
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: IR-2
+  family: IR
+  title: Incident Response Training
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-2_obj.a
+    text: Incident Response Training
+    required_methods:
+    - examine
+- control_id: IR-2(1)
+  family: IR
+  title: Simulated Events
+  baselines:
+  - high
+  objectives:
+  - objective_id: IR-2.1_SMT
+    text: Incorporate simulated events into incident response training to facilitate the required response by personnel in
+      crisis situations.
+    required_methods:
+    - examine
+- control_id: IR-2(2)
+  family: IR
+  title: Automated Training Environments
+  baselines:
+  - high
+  objectives:
+  - objective_id: IR-2.2_SMT
+    text: 'Provide an incident response training environment using {{ insert: param, ir-02.02_odp }}.'
+    required_methods:
+    - examine
+- control_id: IR-3
+  family: IR
+  title: Incident Response Testing
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-3_SMT
+    text: 'Test the effectiveness of the incident response capability for the system {{ insert: param, ir-03_odp.01 }} using
+      the following tests: {{ insert: param, ir-03_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: IR-3(2)
+  family: IR
+  title: Coordination with Related Plans
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-3.2_SMT
+    text: Coordinate incident response testing with organizational elements responsible for related plans.
+    required_methods:
+    - examine
+- control_id: IR-4
+  family: IR
+  title: Incident Handling
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-4_obj.a
+    text: Incident Handling
+    required_methods:
+    - examine
+- control_id: IR-4(1)
+  family: IR
+  title: Automated Incident Handling Processes
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-4.1_SMT
+    text: 'Support the incident handling process using {{ insert: param, ir-04.01_odp }}.'
+    required_methods:
+    - examine
+- control_id: IR-4(4)
+  family: IR
+  title: Information Correlation
+  baselines:
+  - high
+  objectives:
+  - objective_id: IR-4.4_SMT
+    text: Correlate incident information and individual incident responses to achieve an organization-wide perspective on
+      incident awareness and response.
+    required_methods:
+    - examine
+- control_id: IR-4(11)
+  family: IR
+  title: Integrated Incident Response Team
+  baselines:
+  - high
+  objectives:
+  - objective_id: IR-4.11_SMT
+    text: 'Establish and maintain an integrated incident response team that can be deployed to any location identified by
+      the organization in {{ insert: param, ir-04.11_odp }}.'
+    required_methods:
+    - examine
+- control_id: IR-5
+  family: IR
+  title: Incident Monitoring
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-5_SMT
+    text: Track and document incidents.
+    required_methods:
+    - examine
+- control_id: IR-5(1)
+  family: IR
+  title: Automated Tracking, Data Collection, and Analysis
+  baselines:
+  - high
+  objectives:
+  - objective_id: IR-5.1_SMT
+    text: 'Track incidents and collect and analyze incident information using {{ insert: param, ir-5.1_prm_1 }}.'
+    required_methods:
+    - examine
+- control_id: IR-6
+  family: IR
+  title: Incident Reporting
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-6_obj.a
+    text: Incident Reporting
+    required_methods:
+    - examine
+- control_id: IR-6(1)
+  family: IR
+  title: Automated Reporting
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-6.1_SMT
+    text: 'Report incidents using {{ insert: param, ir-06.01_odp }}.'
+    required_methods:
+    - examine
+- control_id: IR-6(3)
+  family: IR
+  title: Supply Chain Coordination
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-6.3_SMT
+    text: Provide incident information to the provider of the product or service and other organizations involved in the supply
+      chain or supply chain governance for systems or system components related to the incident.
+    required_methods:
+    - examine
+- control_id: IR-7
+  family: IR
+  title: Incident Response Assistance
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-7_SMT
+    text: Provide an incident response support resource, integral to the organizational incident response capability, that
+      offers advice and assistance to users of the system for the handling and reporting of incidents.
+    required_methods:
+    - examine
+- control_id: IR-7(1)
+  family: IR
+  title: Automation Support for Availability of Information and Support
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-7.1_SMT
+    text: 'Increase the availability of incident response information and support using {{ insert: param, ir-07.01_odp }}.'
+    required_methods:
+    - examine
+- control_id: IR-8
+  family: IR
+  title: Incident Response Plan
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: IR-8_obj.a
+    text: Incident Response Plan
+    required_methods:
+    - examine
+- control_id: MA-1
+  family: MA
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: MA-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: MA-2
+  family: MA
+  title: Controlled Maintenance
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: MA-2_obj.a
+    text: Controlled Maintenance
+    required_methods:
+    - examine
+- control_id: MA-2(2)
+  family: MA
+  title: Automated Maintenance Activities
+  baselines:
+  - high
+  objectives:
+  - objective_id: MA-2_2_obj.a
+    text: Automated Maintenance Activities
+    required_methods:
+    - examine
+- control_id: MA-3
+  family: MA
+  title: Maintenance Tools
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: MA-3_obj.a
+    text: Maintenance Tools
+    required_methods:
+    - examine
+- control_id: MA-3(1)
+  family: MA
+  title: Inspect Tools
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: MA-3.1_SMT
+    text: Inspect the maintenance tools used by maintenance personnel for improper or unauthorized modifications.
+    required_methods:
+    - examine
+- control_id: MA-3(2)
+  family: MA
+  title: Inspect Media
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: MA-3.2_SMT
+    text: Check media containing diagnostic and test programs for malicious code before the media are used in the system.
+    required_methods:
+    - examine
+- control_id: MA-3(3)
+  family: MA
+  title: Prevent Unauthorized Removal
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: MA-3.3_SMT
+    text: 'Prevent the removal of maintenance equipment containing organizational information by:'
+    required_methods:
+    - examine
+- control_id: MA-4
+  family: MA
+  title: Nonlocal Maintenance
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: MA-4_obj.a
+    text: Nonlocal Maintenance
+    required_methods:
+    - examine
+- control_id: MA-4(3)
+  family: MA
+  title: Comparable Security and Sanitization
+  baselines:
+  - high
+  objectives:
+  - objective_id: MA-4_3_obj.a
+    text: Comparable Security and Sanitization
+    required_methods:
+    - examine
+- control_id: MA-5
+  family: MA
+  title: Maintenance Personnel
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: MA-5_obj.a
+    text: Maintenance Personnel
+    required_methods:
+    - examine
+- control_id: MA-5(1)
+  family: MA
+  title: Individuals Without Appropriate Access
+  baselines:
+  - high
+  objectives:
+  - objective_id: MA-5_1_obj.a
+    text: Individuals Without Appropriate Access
+    required_methods:
+    - examine
+- control_id: MA-6
+  family: MA
+  title: Timely Maintenance
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: MA-6_SMT
+    text: 'Obtain maintenance support and/or spare parts for {{ insert: param, ma-06_odp.01 }} within {{ insert: param, ma-06_odp.02
+      }} of failure.'
+    required_methods:
+    - examine
+- control_id: MP-1
+  family: MP
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: MP-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: MP-2
+  family: MP
+  title: Media Access
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: MP-2_SMT
+    text: 'Restrict access to {{ insert: param, mp-2_prm_1 }} to {{ insert: param, mp-2_prm_2 }}.'
+    required_methods:
+    - examine
+- control_id: MP-3
+  family: MP
+  title: Media Marking
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: MP-3_obj.a
+    text: Media Marking
+    required_methods:
+    - examine
+- control_id: MP-4
+  family: MP
+  title: Media Storage
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: MP-4_obj.a
+    text: Media Storage
+    required_methods:
+    - examine
+- control_id: MP-5
+  family: MP
+  title: Media Transport
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: MP-5_obj.a
+    text: Media Transport
+    required_methods:
+    - examine
+- control_id: MP-6
+  family: MP
+  title: Media Sanitization
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: MP-6_obj.a
+    text: Media Sanitization
+    required_methods:
+    - examine
+- control_id: MP-6(1)
+  family: MP
+  title: Review, Approve, Track, Document, and Verify
+  baselines:
+  - high
+  objectives:
+  - objective_id: MP-6.1_SMT
+    text: Review, approve, track, document, and verify media sanitization and disposal actions.
+    required_methods:
+    - examine
+- control_id: MP-6(2)
+  family: MP
+  title: Equipment Testing
+  baselines:
+  - high
+  objectives:
+  - objective_id: MP-6.2_SMT
+    text: 'Test sanitization equipment and procedures {{ insert: param, mp-6.2_prm_1 }} to ensure that the intended sanitization
+      is being achieved.'
+    required_methods:
+    - examine
+- control_id: MP-6(3)
+  family: MP
+  title: Nondestructive Techniques
+  baselines:
+  - high
+  objectives:
+  - objective_id: MP-6.3_SMT
+    text: 'Apply nondestructive sanitization techniques to portable storage devices prior to connecting such devices to the
+      system under the following circumstances: {{ insert: param, mp-06.03_odp }}.'
+    required_methods:
+    - examine
+- control_id: MP-7
+  family: MP
+  title: Media Use
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: MP-7_obj.a
+    text: Media Use
+    required_methods:
+    - examine
+- control_id: PE-1
+  family: PE
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: PE-2
+  family: PE
+  title: Physical Access Authorizations
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-2_obj.a
+    text: Physical Access Authorizations
+    required_methods:
+    - examine
+- control_id: PE-3
+  family: PE
+  title: Physical Access Control
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-3_obj.a
+    text: Physical Access Control
+    required_methods:
+    - examine
+- control_id: PE-3(1)
+  family: PE
+  title: System Access
+  baselines:
+  - high
+  objectives:
+  - objective_id: PE-3.1_SMT
+    text: 'Enforce physical access authorizations to the system in addition to the physical access controls for the facility
+      at {{ insert: param, pe-03.01_odp }}.'
+    required_methods:
+    - examine
+- control_id: PE-4
+  family: PE
+  title: Access Control for Transmission
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-4_SMT
+    text: 'Control physical access to {{ insert: param, pe-04_odp.01 }} within organizational facilities using {{ insert:
+      param, pe-04_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: PE-5
+  family: PE
+  title: Access Control for Output Devices
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-5_SMT
+    text: 'Control physical access to output from {{ insert: param, pe-05_odp }} to prevent unauthorized individuals from
+      obtaining the output.'
+    required_methods:
+    - examine
+- control_id: PE-6
+  family: PE
+  title: Monitoring Physical Access
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-6_obj.a
+    text: Monitoring Physical Access
+    required_methods:
+    - examine
+- control_id: PE-6(1)
+  family: PE
+  title: Intrusion Alarms and Surveillance Equipment
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-6.1_SMT
+    text: Monitor physical access to the facility where the system resides using physical intrusion alarms and surveillance
+      equipment.
+    required_methods:
+    - examine
+- control_id: PE-6(4)
+  family: PE
+  title: Monitoring Physical Access to Systems
+  baselines:
+  - high
+  objectives:
+  - objective_id: PE-6.4_SMT
+    text: 'Monitor physical access to the system in addition to the physical access monitoring of the facility at {{ insert:
+      param, pe-06.04_odp }}.'
+    required_methods:
+    - examine
+- control_id: PE-8
+  family: PE
+  title: Visitor Access Records
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-8_obj.a
+    text: Visitor Access Records
+    required_methods:
+    - examine
+- control_id: PE-8(1)
+  family: PE
+  title: Automated Records Maintenance and Review
+  baselines:
+  - high
+  objectives:
+  - objective_id: PE-8.1_SMT
+    text: 'Maintain and review visitor access records using {{ insert: param, pe-8.1_prm_1 }}.'
+    required_methods:
+    - examine
+- control_id: PE-9
+  family: PE
+  title: Power Equipment and Cabling
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-9_SMT
+    text: Protect power equipment and power cabling for the system from damage and destruction.
+    required_methods:
+    - examine
+- control_id: PE-10
+  family: PE
+  title: Emergency Shutoff
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-10_obj.a
+    text: Emergency Shutoff
+    required_methods:
+    - examine
+- control_id: PE-11
+  family: PE
+  title: Emergency Power
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-11_SMT
+    text: 'Provide an uninterruptible power supply to facilitate {{ insert: param, pe-11_odp }} in the event of a primary
+      power source loss.'
+    required_methods:
+    - examine
+- control_id: PE-11(1)
+  family: PE
+  title: "Alternate Power Supply \u2014 Minimal Operational Capability"
+  baselines:
+  - high
+  objectives:
+  - objective_id: PE-11.1_SMT
+    text: 'Provide an alternate power supply for the system that is activated {{ insert: param, pe-11.01_odp }} and that can
+      maintain minimally required operational capability in the event of an extended loss of the primary power source.'
+    required_methods:
+    - examine
+- control_id: PE-12
+  family: PE
+  title: Emergency Lighting
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-12_SMT
+    text: Employ and maintain automatic emergency lighting for the system that activates in the event of a power outage or
+      disruption and that covers emergency exits and evacuation routes within the facility.
+    required_methods:
+    - examine
+- control_id: PE-13
+  family: PE
+  title: Fire Protection
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-13_SMT
+    text: Employ and maintain fire detection and suppression systems that are supported by an independent energy source.
+    required_methods:
+    - examine
+- control_id: PE-13(1)
+  family: PE
+  title: "Detection Systems \u2014 Automatic Activation and Notification"
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-13.1_SMT
+    text: 'Employ fire detection systems that activate automatically and notify {{ insert: param, pe-13.01_odp.01 }} and {{
+      insert: param, pe-13.01_odp.02 }} in the event of a fire.'
+    required_methods:
+    - examine
+- control_id: PE-13(2)
+  family: PE
+  title: "Suppression Systems \u2014 Automatic Activation and Notification"
+  baselines:
+  - high
+  objectives:
+  - objective_id: PE-13_2_obj.a
+    text: "Suppression Systems \u2014 Automatic Activation and Notification"
+    required_methods:
+    - examine
+- control_id: PE-14
+  family: PE
+  title: Environmental Controls
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-14_obj.a
+    text: Environmental Controls
+    required_methods:
+    - examine
+- control_id: PE-15
+  family: PE
+  title: Water Damage Protection
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-15_SMT
+    text: Protect the system from damage resulting from water leakage by providing master shutoff or isolation valves that
+      are accessible, working properly, and known to key personnel.
+    required_methods:
+    - examine
+- control_id: PE-15(1)
+  family: PE
+  title: Automation Support
+  baselines:
+  - high
+  objectives:
+  - objective_id: PE-15.1_SMT
+    text: 'Detect the presence of water near the system and alert {{ insert: param, pe-15.01_odp.01 }} using {{ insert: param,
+      pe-15.01_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: PE-16
+  family: PE
+  title: Delivery and Removal
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-16_obj.a
+    text: Delivery and Removal
+    required_methods:
+    - examine
+- control_id: PE-17
+  family: PE
+  title: Alternate Work Site
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: PE-17_obj.a
+    text: Alternate Work Site
+    required_methods:
+    - examine
+- control_id: PE-18
+  family: PE
+  title: Location of System Components
+  baselines:
+  - high
+  objectives:
+  - objective_id: PE-18_SMT
+    text: 'Position system components within the facility to minimize potential damage from {{ insert: param, pe-18_odp }}
+      and to minimize the opportunity for unauthorized access.'
+    required_methods:
+    - examine
+- control_id: PL-1
+  family: PL
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PL-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: PL-2
+  family: PL
+  title: System Security and Privacy Plans
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PL-2_obj.a
+    text: System Security and Privacy Plans
+    required_methods:
+    - examine
+- control_id: PL-4
+  family: PL
+  title: Rules of Behavior
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PL-4_obj.a
+    text: Rules of Behavior
+    required_methods:
+    - examine
+- control_id: PL-4(1)
+  family: PL
+  title: Social Media and External Site/Application Usage Restrictions
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PL-4.1_SMT
+    text: 'Include in the rules of behavior, restrictions on:'
+    required_methods:
+    - examine
+- control_id: PL-8
+  family: PL
+  title: Security and Privacy Architectures
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: PL-8_obj.a
+    text: Security and Privacy Architectures
+    required_methods:
+    - examine
+- control_id: PL-10
+  family: PL
+  title: Baseline Selection
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PL-10_SMT
+    text: Select a control baseline for the system.
+    required_methods:
+    - examine
+- control_id: PL-11
+  family: PL
+  title: Baseline Tailoring
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PL-11_SMT
+    text: Tailor the selected control baseline by applying specified tailoring actions.
+    required_methods:
+    - examine
+- control_id: PS-1
+  family: PS
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PS-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: PS-2
+  family: PS
+  title: Position Risk Designation
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PS-2_obj.a
+    text: Position Risk Designation
+    required_methods:
+    - examine
+- control_id: PS-3
+  family: PS
+  title: Personnel Screening
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PS-3_obj.a
+    text: Personnel Screening
+    required_methods:
+    - examine
+- control_id: PS-4
+  family: PS
+  title: Personnel Termination
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PS-4_SMT
+    text: 'Upon termination of individual employment:'
+    required_methods:
+    - examine
+- control_id: PS-4(2)
+  family: PS
+  title: Automated Actions
+  baselines:
+  - high
+  objectives:
+  - objective_id: PS-4.2_SMT
+    text: 'Use {{ insert: param, ps-04.02_odp.01 }} to {{ insert: param, ps-04.02_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: PS-5
+  family: PS
+  title: Personnel Transfer
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PS-5_obj.a
+    text: Personnel Transfer
+    required_methods:
+    - examine
+- control_id: PS-6
+  family: PS
+  title: Access Agreements
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PS-6_obj.a
+    text: Access Agreements
+    required_methods:
+    - examine
+- control_id: PS-7
+  family: PS
+  title: External Personnel Security
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PS-7_obj.a
+    text: External Personnel Security
+    required_methods:
+    - examine
+- control_id: PS-8
+  family: PS
+  title: Personnel Sanctions
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PS-8_obj.a
+    text: Personnel Sanctions
+    required_methods:
+    - examine
+- control_id: PS-9
+  family: PS
+  title: Position Descriptions
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: PS-9_SMT
+    text: Incorporate security and privacy roles and responsibilities into organizational position descriptions.
+    required_methods:
+    - examine
+- control_id: RA-1
+  family: RA
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: RA-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: RA-2
+  family: RA
+  title: Security Categorization
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: RA-2_obj.a
+    text: Security Categorization
+    required_methods:
+    - examine
+- control_id: RA-3
+  family: RA
+  title: Risk Assessment
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: RA-3_obj.a
+    text: Risk Assessment
+    required_methods:
+    - examine
+- control_id: RA-3(1)
+  family: RA
+  title: Supply Chain Risk Assessment
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: RA-3_1_obj.a
+    text: Supply Chain Risk Assessment
+    required_methods:
+    - examine
+- control_id: RA-5
+  family: RA
+  title: Vulnerability Monitoring and Scanning
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: RA-5_obj.a
+    text: Vulnerability Monitoring and Scanning
+    required_methods:
+    - examine
+- control_id: RA-5(2)
+  family: RA
+  title: Update Vulnerabilities to Be Scanned
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: RA-5.2_SMT
+    text: 'Update the system vulnerabilities to be scanned {{ insert: param, ra-05.02_odp.01 }}.'
+    required_methods:
+    - examine
+- control_id: RA-5(4)
+  family: RA
+  title: Discoverable Information
+  baselines:
+  - high
+  objectives:
+  - objective_id: RA-5.4_SMT
+    text: 'Determine information about the system that is discoverable and take {{ insert: param, ra-05.04_odp }}.'
+    required_methods:
+    - examine
+- control_id: RA-5(5)
+  family: RA
+  title: Privileged Access
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: RA-5.5_SMT
+    text: 'Implement privileged access authorization to {{ insert: param, ra-05.05_odp.01 }} for {{ insert: param, ra-05.05_odp.02
+      }}.'
+    required_methods:
+    - examine
+- control_id: RA-5(11)
+  family: RA
+  title: Public Disclosure Program
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: RA-5.11_SMT
+    text: Establish a public reporting channel for receiving reports of vulnerabilities in organizational systems and system
+      components.
+    required_methods:
+    - examine
+- control_id: RA-7
+  family: RA
+  title: Risk Response
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: RA-7_SMT
+    text: Respond to findings from security and privacy assessments, monitoring, and audits in accordance with organizational
+      risk tolerance.
+    required_methods:
+    - examine
+- control_id: RA-9
+  family: RA
+  title: Criticality Analysis
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: RA-9_SMT
+    text: 'Identify critical system components and functions by performing a criticality analysis for {{ insert: param, ra-09_odp.01
+      }} at {{ insert: param, ra-09_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: SA-1
+  family: SA
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: SA-2
+  family: SA
+  title: Allocation of Resources
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-2_obj.a
+    text: Allocation of Resources
+    required_methods:
+    - examine
+- control_id: SA-3
+  family: SA
+  title: System Development Life Cycle
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-3_obj.a
+    text: System Development Life Cycle
+    required_methods:
+    - examine
+- control_id: SA-4
+  family: SA
+  title: Acquisition Process
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-4_SMT
+    text: 'Include the following requirements, descriptions, and criteria, explicitly or by reference, using {{ insert: param,
+      sa-04_odp.01 }} in the acquisition contract for the system, system component, or system service:'
+    required_methods:
+    - examine
+- control_id: SA-4(1)
+  family: SA
+  title: Functional Properties of Controls
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-4.1_SMT
+    text: Require the developer of the system, system component, or system service to provide a description of the functional
+      properties of the controls to be implemented.
+    required_methods:
+    - examine
+- control_id: SA-4(2)
+  family: SA
+  title: Design and Implementation Information for Controls
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-4.2_SMT
+    text: 'Require the developer of the system, system component, or system service to provide design and implementation information
+      for the controls that includes: {{ insert: param, sa-04.02_odp.01 }} at {{ insert: param, sa-04.02_odp.03 }}.'
+    required_methods:
+    - examine
+- control_id: SA-4(5)
+  family: SA
+  title: System, Component, and Service Configurations
+  baselines:
+  - high
+  objectives:
+  - objective_id: SA-4.5_SMT
+    text: 'Require the developer of the system, system component, or system service to:'
+    required_methods:
+    - examine
+- control_id: SA-4(9)
+  family: SA
+  title: Functions, Ports, Protocols, and Services in Use
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-4.9_SMT
+    text: Require the developer of the system, system component, or system service to identify the functions, ports, protocols,
+      and services intended for organizational use.
+    required_methods:
+    - examine
+- control_id: SA-4(10)
+  family: SA
+  title: Use of Approved PIV Products
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-4.10_SMT
+    text: Employ only information technology products on the FIPS 201-approved products list for Personal Identity Verification
+      (PIV) capability implemented within organizational systems.
+    required_methods:
+    - examine
+- control_id: SA-5
+  family: SA
+  title: System Documentation
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-5_obj.a
+    text: System Documentation
+    required_methods:
+    - examine
+- control_id: SA-8
+  family: SA
+  title: Security and Privacy Engineering Principles
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-8_SMT
+    text: 'Apply the following systems security and privacy engineering principles in the specification, design, development,
+      implementation, and modification of the system and system components: {{ insert: param, sa-8_prm_1 }}.'
+    required_methods:
+    - examine
+- control_id: SA-9
+  family: SA
+  title: External System Services
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-9_obj.a
+    text: External System Services
+    required_methods:
+    - examine
+- control_id: SA-9(2)
+  family: SA
+  title: Identification of Functions, Ports, Protocols, and Services
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-9.2_SMT
+    text: 'Require providers of the following external system services to identify the functions, ports, protocols, and other
+      services required for the use of such services: {{ insert: param, sa-09.02_odp }}.'
+    required_methods:
+    - examine
+- control_id: SA-10
+  family: SA
+  title: Developer Configuration Management
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-10_SMT
+    text: 'Require the developer of the system, system component, or system service to:'
+    required_methods:
+    - examine
+- control_id: SA-11
+  family: SA
+  title: Developer Testing and Evaluation
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-11_SMT
+    text: 'Require the developer of the system, system component, or system service, at all post-design stages of the system
+      development life cycle, to:'
+    required_methods:
+    - examine
+- control_id: SA-15
+  family: SA
+  title: Development Process, Standards, and Tools
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-15_obj.a
+    text: Development Process, Standards, and Tools
+    required_methods:
+    - examine
+- control_id: SA-15(3)
+  family: SA
+  title: Criticality Analysis
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-15.3_SMT
+    text: 'Require the developer of the system, system component, or system service to perform a criticality analysis:'
+    required_methods:
+    - examine
+- control_id: SA-16
+  family: SA
+  title: Developer-provided Training
+  baselines:
+  - high
+  objectives:
+  - objective_id: SA-16_SMT
+    text: 'Require the developer of the system, system component, or system service to provide the following training on the
+      correct use and operation of the implemented security and privacy functions, controls, and/or mechanisms: {{ insert:
+      param, sa-16_odp }}.'
+    required_methods:
+    - examine
+- control_id: SA-17
+  family: SA
+  title: Developer Security and Privacy Architecture and Design
+  baselines:
+  - high
+  objectives:
+  - objective_id: SA-17_SMT
+    text: 'Require the developer of the system, system component, or system service to produce a design specification and
+      security and privacy architecture that:'
+    required_methods:
+    - examine
+- control_id: SA-21
+  family: SA
+  title: Developer Screening
+  baselines:
+  - high
+  objectives:
+  - objective_id: SA-21_SMT
+    text: 'Require that the developer of {{ insert: param, sa-21_odp.01 }}:'
+    required_methods:
+    - examine
+- control_id: SA-22
+  family: SA
+  title: Unsupported System Components
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SA-22_obj.a
+    text: Unsupported System Components
+    required_methods:
+    - examine
+- control_id: SC-1
+  family: SC
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: SC-2
+  family: SC
+  title: Separation of System and User Functionality
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-2_SMT
+    text: Separate user functionality, including user interface services, from system management functionality.
+    required_methods:
+    - examine
+- control_id: SC-3
+  family: SC
+  title: Security Function Isolation
+  baselines:
+  - high
+  objectives:
+  - objective_id: SC-3_SMT
+    text: Isolate security functions from nonsecurity functions.
+    required_methods:
+    - examine
+- control_id: SC-4
+  family: SC
+  title: Information in Shared System Resources
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-4_SMT
+    text: Prevent unauthorized and unintended information transfer via shared system resources.
+    required_methods:
+    - examine
+- control_id: SC-5
+  family: SC
+  title: Denial-of-service Protection
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-5_obj.a
+    text: Denial-of-service Protection
+    required_methods:
+    - examine
+- control_id: SC-7
+  family: SC
+  title: Boundary Protection
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-7_obj.a
+    text: Boundary Protection
+    required_methods:
+    - examine
+  required_fields:
+  - boundary_components
+  - monitoring_mechanism
+- control_id: SC-7(3)
+  family: SC
+  title: Access Points
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-7.3_SMT
+    text: Limit the number of external network connections to the system.
+    required_methods:
+    - examine
+- control_id: SC-7(4)
+  family: SC
+  title: External Telecommunications Services
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-7_4_obj.a
+    text: External Telecommunications Services
+    required_methods:
+    - examine
+- control_id: SC-7(5)
+  family: SC
+  title: "Deny by Default \u2014 Allow by Exception"
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-7.5_SMT
+    text: 'Deny network communications traffic by default and allow network communications traffic by exception {{ insert:
+      param, sc-07.05_odp.01 }}.'
+    required_methods:
+    - examine
+- control_id: SC-7(7)
+  family: SC
+  title: Split Tunneling for Remote Devices
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-7.7_SMT
+    text: 'Prevent split tunneling for remote devices connecting to organizational systems unless the split tunnel is securely
+      provisioned using {{ insert: param, sc-07.07_odp }}.'
+    required_methods:
+    - examine
+- control_id: SC-7(8)
+  family: SC
+  title: Route Traffic to Authenticated Proxy Servers
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-7.8_SMT
+    text: 'Route {{ insert: param, sc-07.08_odp.01 }} to {{ insert: param, sc-07.08_odp.02 }} through authenticated proxy
+      servers at managed interfaces.'
+    required_methods:
+    - examine
+- control_id: SC-7(18)
+  family: SC
+  title: Fail Secure
+  baselines:
+  - high
+  objectives:
+  - objective_id: SC-7.18_SMT
+    text: Prevent systems from entering unsecure states in the event of an operational failure of a boundary protection device.
+    required_methods:
+    - examine
+- control_id: SC-7(21)
+  family: SC
+  title: Isolation of System Components
+  baselines:
+  - high
+  objectives:
+  - objective_id: SC-7.21_SMT
+    text: 'Employ boundary protection mechanisms to isolate {{ insert: param, sc-07.21_odp.01 }} supporting {{ insert: param,
+      sc-07.21_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: SC-8
+  family: SC
+  title: Transmission Confidentiality and Integrity
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-8_SMT
+    text: 'Protect the {{ insert: param, sc-08_odp }} of transmitted information.'
+    required_methods:
+    - examine
+- control_id: SC-8(1)
+  family: SC
+  title: Cryptographic Protection
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-8.1_SMT
+    text: 'Implement cryptographic mechanisms to {{ insert: param, sc-08.01_odp }} during transmission.'
+    required_methods:
+    - examine
+- control_id: SC-10
+  family: SC
+  title: Network Disconnect
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-10_SMT
+    text: 'Terminate the network connection associated with a communications session at the end of the session or after {{
+      insert: param, sc-10_odp }} of inactivity.'
+    required_methods:
+    - examine
+- control_id: SC-12
+  family: SC
+  title: Cryptographic Key Establishment and Management
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-12_SMT
+    text: 'Establish and manage cryptographic keys when cryptography is employed within the system in accordance with the
+      following key management requirements: {{ insert: param, sc-12_odp }}.'
+    required_methods:
+    - examine
+- control_id: SC-12(1)
+  family: SC
+  title: Availability
+  baselines:
+  - high
+  objectives:
+  - objective_id: SC-12.1_SMT
+    text: Maintain availability of information in the event of the loss of cryptographic keys by users.
+    required_methods:
+    - examine
+- control_id: SC-13
+  family: SC
+  title: Cryptographic Protection
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-13_obj.a
+    text: Cryptographic Protection
+    required_methods:
+    - examine
+- control_id: SC-15
+  family: SC
+  title: Collaborative Computing Devices and Applications
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-15_obj.a
+    text: Collaborative Computing Devices and Applications
+    required_methods:
+    - examine
+- control_id: SC-17
+  family: SC
+  title: Public Key Infrastructure Certificates
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-17_obj.a
+    text: Public Key Infrastructure Certificates
+    required_methods:
+    - examine
+- control_id: SC-18
+  family: SC
+  title: Mobile Code
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-18_obj.a
+    text: Mobile Code
+    required_methods:
+    - examine
+- control_id: SC-20
+  family: SC
+  title: Secure Name/Address Resolution Service (Authoritative Source)
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-20_obj.a
+    text: Secure Name/Address Resolution Service (Authoritative Source)
+    required_methods:
+    - examine
+- control_id: SC-21
+  family: SC
+  title: Secure Name/Address Resolution Service (Recursive or Caching Resolver)
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-21_SMT
+    text: Request and perform data origin authentication and data integrity verification on the name/address resolution responses
+      the system receives from authoritative sources.
+    required_methods:
+    - examine
+- control_id: SC-22
+  family: SC
+  title: Architecture and Provisioning for Name/Address Resolution Service
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-22_SMT
+    text: Ensure the systems that collectively provide name/address resolution service for an organization are fault-tolerant
+      and implement internal and external role separation.
+    required_methods:
+    - examine
+- control_id: SC-23
+  family: SC
+  title: Session Authenticity
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-23_SMT
+    text: Protect the authenticity of communications sessions.
+    required_methods:
+    - examine
+- control_id: SC-24
+  family: SC
+  title: Fail in Known State
+  baselines:
+  - high
+  objectives:
+  - objective_id: SC-24_SMT
+    text: 'Fail to a {{ insert: param, sc-24_odp.02 }} for the following failures on the indicated components while preserving
+      {{ insert: param, sc-24_odp.03 }} in failure: {{ insert: param, sc-24_odp.01 }}.'
+    required_methods:
+    - examine
+- control_id: SC-28
+  family: SC
+  title: Protection of Information at Rest
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-28_SMT
+    text: 'Protect the {{ insert: param, sc-28_odp.01 }} of the following information at rest: {{ insert: param, sc-28_odp.02
+      }}.'
+    required_methods:
+    - examine
+- control_id: SC-28(1)
+  family: SC
+  title: Cryptographic Protection
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-28.1_SMT
+    text: 'Implement cryptographic mechanisms to prevent unauthorized disclosure and modification of the following information
+      at rest on {{ insert: param, sc-28.01_odp.02 }}: {{ insert: param, sc-28.01_odp.01 }}.'
+    required_methods:
+    - examine
+- control_id: SC-39
+  family: SC
+  title: Process Isolation
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SC-39_SMT
+    text: Maintain a separate execution domain for each executing system process.
+    required_methods:
+    - examine
+- control_id: SI-1
+  family: SI
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: SI-2
+  family: SI
+  title: Flaw Remediation
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-2_obj.a
+    text: Flaw Remediation
+    required_methods:
+    - examine
+- control_id: SI-2(2)
+  family: SI
+  title: Automated Flaw Remediation Status
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-2.2_SMT
+    text: 'Determine if system components have applicable security-relevant software and firmware updates installed using
+      {{ insert: param, si-02.02_odp.01 }} {{ insert: param, si-02.02_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: SI-3
+  family: SI
+  title: Malicious Code Protection
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-3_obj.a
+    text: Malicious Code Protection
+    required_methods:
+    - examine
+- control_id: SI-4
+  family: SI
+  title: System Monitoring
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-4_obj.a
+    text: System Monitoring
+    required_methods:
+    - examine
+  required_fields:
+  - monitoring_objectives
+  - alerting_mechanism
+- control_id: SI-4(2)
+  family: SI
+  title: Automated Tools and Mechanisms for Real-time Analysis
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-4.2_SMT
+    text: Employ automated tools and mechanisms to support near real-time analysis of events.
+    required_methods:
+    - examine
+- control_id: SI-4(4)
+  family: SI
+  title: Inbound and Outbound Communications Traffic
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-4_4_obj.a
+    text: Inbound and Outbound Communications Traffic
+    required_methods:
+    - examine
+- control_id: SI-4(5)
+  family: SI
+  title: System-generated Alerts
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-4.5_SMT
+    text: 'Alert {{ insert: param, si-04.05_odp.01 }} when the following system-generated indications of compromise or potential
+      compromise occur: {{ insert: param, si-04.05_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: SI-4(10)
+  family: SI
+  title: Visibility of Encrypted Communications
+  baselines:
+  - high
+  objectives:
+  - objective_id: SI-4.10_SMT
+    text: 'Make provisions so that {{ insert: param, si-04.10_odp.01 }} is visible to {{ insert: param, si-04.10_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: SI-4(12)
+  family: SI
+  title: Automated Organization-generated Alerts
+  baselines:
+  - high
+  objectives:
+  - objective_id: SI-4.12_SMT
+    text: 'Alert {{ insert: param, si-04.12_odp.01 }} using {{ insert: param, si-04.12_odp.02 }} when the following indications
+      of inappropriate or unusual activities with security or privacy implications occur: {{ insert: param, si-04.12_odp.03
+      }}.'
+    required_methods:
+    - examine
+- control_id: SI-4(14)
+  family: SI
+  title: Wireless Intrusion Detection
+  baselines:
+  - high
+  objectives:
+  - objective_id: SI-4.14_SMT
+    text: Employ a wireless intrusion detection system to identify rogue wireless devices and to detect attack attempts and
+      potential compromises or breaches to the system.
+    required_methods:
+    - examine
+- control_id: SI-4(20)
+  family: SI
+  title: Privileged Users
+  baselines:
+  - high
+  objectives:
+  - objective_id: SI-4.20_SMT
+    text: 'Implement the following additional monitoring of privileged users: {{ insert: param, si-04.20_odp }}.'
+    required_methods:
+    - examine
+- control_id: SI-4(22)
+  family: SI
+  title: Unauthorized Network Services
+  baselines:
+  - high
+  objectives:
+  - objective_id: SI-4_22_obj.a
+    text: Unauthorized Network Services
+    required_methods:
+    - examine
+- control_id: SI-5
+  family: SI
+  title: Security Alerts, Advisories, and Directives
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-5_obj.a
+    text: Security Alerts, Advisories, and Directives
+    required_methods:
+    - examine
+- control_id: SI-5(1)
+  family: SI
+  title: Automated Alerts and Advisories
+  baselines:
+  - high
+  objectives:
+  - objective_id: SI-5.1_SMT
+    text: 'Broadcast security alert and advisory information throughout the organization using {{ insert: param, si-05.01_odp
+      }}.'
+    required_methods:
+    - examine
+- control_id: SI-6
+  family: SI
+  title: Security and Privacy Function Verification
+  baselines:
+  - high
+  objectives:
+  - objective_id: SI-6_obj.a
+    text: Security and Privacy Function Verification
+    required_methods:
+    - examine
+- control_id: SI-7
+  family: SI
+  title: Software, Firmware, and Information Integrity
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-7_obj.a
+    text: Software, Firmware, and Information Integrity
+    required_methods:
+    - examine
+- control_id: SI-7(1)
+  family: SI
+  title: Integrity Checks
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-7.1_SMT
+    text: 'Perform an integrity check of {{ insert: param, si-7.1_prm_1 }} {{ insert: param, si-7.1_prm_2 }}.'
+    required_methods:
+    - examine
+- control_id: SI-7(2)
+  family: SI
+  title: Automated Notifications of Integrity Violations
+  baselines:
+  - high
+  objectives:
+  - objective_id: SI-7.2_SMT
+    text: 'Employ automated tools that provide notification to {{ insert: param, si-07.02_odp }} upon discovering discrepancies
+      during integrity verification.'
+    required_methods:
+    - examine
+- control_id: SI-7(5)
+  family: SI
+  title: Automated Response to Integrity Violations
+  baselines:
+  - high
+  objectives:
+  - objective_id: SI-7.5_SMT
+    text: 'Automatically {{ insert: param, si-07.05_odp.01 }} when integrity violations are discovered.'
+    required_methods:
+    - examine
+- control_id: SI-7(7)
+  family: SI
+  title: Integration of Detection and Response
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-7.7_SMT
+    text: 'Incorporate the detection of the following unauthorized changes into the organizational incident response capability:
+      {{ insert: param, si-07.07_odp }}.'
+    required_methods:
+    - examine
+- control_id: SI-7(15)
+  family: SI
+  title: Code Authentication
+  baselines:
+  - high
+  objectives:
+  - objective_id: SI-7.15_SMT
+    text: 'Implement cryptographic mechanisms to authenticate the following software or firmware components prior to installation:
+      {{ insert: param, si-07.15_odp }}.'
+    required_methods:
+    - examine
+- control_id: SI-8
+  family: SI
+  title: Spam Protection
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-8_obj.a
+    text: Spam Protection
+    required_methods:
+    - examine
+- control_id: SI-8(2)
+  family: SI
+  title: Automatic Updates
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-8.2_SMT
+    text: 'Automatically update spam protection mechanisms {{ insert: param, si-08.02_odp }}.'
+    required_methods:
+    - examine
+- control_id: SI-10
+  family: SI
+  title: Information Input Validation
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-10_SMT
+    text: 'Check the validity of the following information inputs: {{ insert: param, si-10_odp }}.'
+    required_methods:
+    - examine
+- control_id: SI-11
+  family: SI
+  title: Error Handling
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-11_obj.a
+    text: Error Handling
+    required_methods:
+    - examine
+- control_id: SI-12
+  family: SI
+  title: Information Management and Retention
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-12_SMT
+    text: Manage and retain information within the system and information output from the system in accordance with applicable
+      laws, executive orders, directives, regulations, policies, standards, guidelines and operational requirements.
+    required_methods:
+    - examine
+- control_id: SI-16
+  family: SI
+  title: Memory Protection
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SI-16_SMT
+    text: 'Implement the following controls to protect the system memory from unauthorized code execution: {{ insert: param,
+      si-16_odp }}.'
+    required_methods:
+    - examine
+- control_id: SR-1
+  family: SR
+  title: Policy and Procedures
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-1_obj.a
+    text: Policy and Procedures
+    required_methods:
+    - examine
+- control_id: SR-2
+  family: SR
+  title: Supply Chain Risk Management Plan
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-2_obj.a
+    text: Supply Chain Risk Management Plan
+    required_methods:
+    - examine
+- control_id: SR-2(1)
+  family: SR
+  title: Establish SCRM Team
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-2.1_SMT
+    text: 'Establish a supply chain risk management team consisting of {{ insert: param, sr-02.01_odp.01 }} to lead and support
+      the following SCRM activities: {{ insert: param, sr-02.01_odp.02 }}.'
+    required_methods:
+    - examine
+- control_id: SR-3
+  family: SR
+  title: Supply Chain Controls and Processes
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-3_obj.a
+    text: Supply Chain Controls and Processes
+    required_methods:
+    - examine
+- control_id: SR-5
+  family: SR
+  title: Acquisition Strategies, Tools, and Methods
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-5_SMT
+    text: 'Employ the following acquisition strategies, contract tools, and procurement methods to protect against, identify,
+      and mitigate supply chain risks: {{ insert: param, sr-05_odp }}.'
+    required_methods:
+    - examine
+- control_id: SR-6
+  family: SR
+  title: Supplier Assessments and Reviews
+  baselines:
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-6_SMT
+    text: 'Assess and review the supply chain-related risks associated with suppliers or contractors and the system, system
+      component, or system service they provide {{ insert: param, sr-06_odp }}.'
+    required_methods:
+    - examine
+- control_id: SR-8
+  family: SR
+  title: Notification Agreements
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-8_SMT
+    text: 'Establish agreements and procedures with entities involved in the supply chain for the system, system component,
+      or system service for the {{ insert: param, sr-08_odp.01 }}.'
+    required_methods:
+    - examine
+- control_id: SR-9
+  family: SR
+  title: Tamper Resistance and Detection
+  baselines:
+  - high
+  objectives:
+  - objective_id: SR-9_SMT
+    text: Implement a tamper protection program for the system, system component, or system service.
+    required_methods:
+    - examine
+- control_id: SR-9(1)
+  family: SR
+  title: Multiple Stages of System Development Life Cycle
+  baselines:
+  - high
+  objectives:
+  - objective_id: SR-9.1_SMT
+    text: Employ anti-tamper technologies, tools, and techniques throughout the system development life cycle.
+    required_methods:
+    - examine
+- control_id: SR-10
+  family: SR
+  title: Inspection of Systems or Components
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-10_SMT
+    text: 'Inspect the following systems or system components {{ insert: param, sr-10_odp.02 }} to detect tampering: {{ insert:
+      param, sr-10_odp.01 }}.'
+    required_methods:
+    - examine
+- control_id: SR-11
+  family: SR
+  title: Component Authenticity
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-11_obj.a
+    text: Component Authenticity
+    required_methods:
+    - examine
+- control_id: SR-11(1)
+  family: SR
+  title: Anti-counterfeit Training
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-11.1_SMT
+    text: 'Train {{ insert: param, sr-11.01_odp }} to detect counterfeit system components (including hardware, software,
+      and firmware).'
+    required_methods:
+    - examine
+- control_id: SR-11(2)
+  family: SR
+  title: Configuration Control for Component Service and Repair
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-11.2_SMT
+    text: 'Maintain configuration control over the following system components awaiting service or repair and serviced or
+      repaired components awaiting return to service: {{ insert: param, sr-11.02_odp }}.'
+    required_methods:
+    - examine
+- control_id: SR-12
+  family: SR
+  title: Component Disposal
+  baselines:
+  - low
+  - moderate
+  - high
+  objectives:
+  - objective_id: SR-12_SMT
+    text: 'Dispose of {{ insert: param, sr-12_odp.01 }} using the following techniques and methods: {{ insert: param, sr-12_odp.02
+      }}.'
+    required_methods:
+    - examine

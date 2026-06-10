@@ -219,6 +219,66 @@ header.topbar {
   color: var(--alarm); border-color: var(--alarm); background: var(--alarm-subtle);
 }
 
+/* ── Related controls panel (Phase II FR-XA-03) ─────────────────────── */
+.related-controls {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+}
+.related-controls[hidden] { display: none; }
+.related-controls > header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+.related-controls .related-label {
+  font-family: var(--font-display); font-weight: 700;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--accent);
+}
+.related-controls .related-meta {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted);
+}
+.related-section { margin-top: var(--space-2); }
+.related-section[hidden] { display: none; }
+.related-section h4 {
+  margin: 0 0 4px;
+  font-family: var(--font-display); font-weight: 600;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--text-secondary);
+}
+.related-section ul {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.related-section li {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-family: var(--font-mono); font-size: 11.5px;
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text-secondary);
+}
+.related-section li .ctrl {
+  font-family: var(--font-display); font-weight: 700;
+  font-size: 12px; color: var(--text-primary); letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.related-section li .src {
+  flex: 1; color: var(--text-muted); font-size: 10.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.related-section li .out-of-baseline {
+  font-family: var(--font-display); font-weight: 700;
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}
+
 /* "+" button to create a new program — only visible to admins via JS. */
 .program-new {
   width: 22px; height: 22px;

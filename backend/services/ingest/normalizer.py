@@ -36,14 +36,46 @@ def detect_control_ids(text: str) -> list[str]:
     return out
 
 
+# A block is treated as a "section anchor" only when it looks like a heading.
+# Otherwise a paragraph like "Account events are logged per AU-2" — which sits
+# under the AC-2 section but mentions AU-2 — would be re-keyed to AU-2 and the
+# narrative would lose its real section context. Distinguishing headings from
+# body text fixes that.
+_HEADING_RE = re.compile(
+    r"""^\s*(?:
+            \#{1,6}\s+            |   # markdown heading: # / ## / ### …
+            \*{1,2}[^*]{0,80}\*{1,2}\s*$  | # bold-only line: **AC-2 Account Management**
+            [A-Z]{2}-\d{1,3}(?:\(\d+\))?  \s+[A-Z]    # bare 'AC-2 Account Mgmt …'
+        )""",
+    re.VERBOSE,
+)
+
+
+def _looks_like_heading(text: str) -> bool:
+    """Heuristic: does this block start a section?
+
+    True for `## AC-2 ...`, `**AC-2 Title**`, and short `AC-2 Account Mgmt …`
+    headings. False for ordinary prose that merely mentions a control id.
+    """
+    head = text.lstrip()
+    if not head:
+        return False
+    return bool(_HEADING_RE.match(head))
+
+
 def normalize(artifact_id: str, path: Path) -> list[NormalizedSegment]:
     """Parse + segment + key by control. Raises ParseError on corrupt input.
 
     Section carry-forward: documents put the control id in a heading (e.g.
-    '## AC-2') and the narrative in following paragraphs. We propagate the most
-    recently seen control hint to subsequent segments until a new control id
-    appears, so the body text is keyed to its control for Tier 0 coverage and
-    required-field checks. Parser-supplied hints (e.g. OSCAL) reset it per block.
+    '## AC-2') and the narrative in following paragraphs. The most recently
+    seen control hint is propagated to subsequent segments until a NEW heading
+    is encountered. Critically: control ids mentioned in *body text* are
+    treated as references (not new section anchors) so a paragraph like
+    "Account events are logged per AU-2" stays under its AC-2 section instead
+    of getting re-keyed to AU-2.
+
+    Parser-supplied hints (e.g. OSCAL's structured `control-id`) override
+    the heuristic and reset the current control per block.
     """
     blocks = parse_artifact(path)
     segments: list[NormalizedSegment] = []
@@ -51,12 +83,15 @@ def normalize(artifact_id: str, path: Path) -> list[NormalizedSegment]:
     for b in blocks:
         hint = b.control_hint
         if hint is None:
-            ids = detect_control_ids(b.text)
-            if ids:
-                hint = ids[0]
-                current_control = hint
+            if _looks_like_heading(b.text):
+                ids = detect_control_ids(b.text)
+                if ids:
+                    hint = ids[0]
+                    current_control = hint
+                else:
+                    hint = current_control
             else:
-                hint = current_control  # carry forward from the last heading
+                hint = current_control  # body text → carry forward
         else:
             current_control = hint
         segments.append(

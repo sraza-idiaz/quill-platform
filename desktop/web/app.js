@@ -19,6 +19,8 @@ const state = {
   packages: [],
   currentPackageId: null,
   currentPackage: null,
+  // Phase II FR-XA-03 — dependency graph for the active artifact/package
+  graph: null,
 };
 
 // ─────────────────────────────────────────── API ──
@@ -299,6 +301,7 @@ function setGateEmpty() {
   $("#goToInventoryBtn")?.addEventListener?.("click", () => switchView("inventory"));
   $("#findingsList").innerHTML = "";
   $("#findingsEmpty").hidden = false;
+  $("#relatedControls").hidden = true;     // Phase II FR-XA-03 — clear the panel
   hideAttestFooter();
 }
 
@@ -341,7 +344,65 @@ async function openGateFor(artifactId) {
   renderFindingsList();
   $("#findingsMeta").textContent = `${(state.findingsByRun.get(run.id) || []).length} findings`;
   $("#gateActions").hidden = false;
+  await loadGraphForCurrent();      // Phase II FR-XA-03 — preload the dependency graph
   updateAlertBadge();
+}
+
+// ── Phase II FR-XA-03 — dependency graph + related controls ──────────── //
+async function loadGraphForCurrent() {
+  state.graph = null;
+  if (!state.currentArtifact) return;
+  // Prefer the package graph when the artifact belongs to a package;
+  // otherwise fall back to the single-artifact graph.
+  const pkgId = state.currentArtifact.package_id;
+  const url = pkgId ? `/packages/${pkgId}/graph` : `/artifacts/${state.currentArtifact.id}/graph`;
+  try {
+    state.graph = await api(url);
+  } catch (_) { state.graph = null; }
+}
+
+function renderRelatedControls(finding) {
+  const panel = $("#relatedControls");
+  if (!state.graph || !finding) { panel.hidden = true; return; }
+  const cid = finding.control_id;
+  const refs   = state.graph.edges.filter(e => e.from_control === cid);
+  const refBy  = state.graph.edges.filter(e => e.to_control   === cid);
+  if (!refs.length && !refBy.length) { panel.hidden = true; return; }
+
+  panel.hidden = false;
+  $("#relatedMeta").textContent = `${cid} · ${refs.length} out · ${refBy.length} in`;
+
+  const nodesById = Object.fromEntries(state.graph.nodes.map(n => [n.control_id, n]));
+  const renderEdge = (e, targetCid) => {
+    const node = nodesById[targetCid] || {};
+    const tag = node.in_baseline === false
+      ? `<span class="out-of-baseline" title="not in active baseline">out-of-baseline</span>`
+      : "";
+    const src = `${escapeHtml(e.artifact_id)} · ${escapeHtml(e.locator)}`;
+    return `<li>
+        <span class="ctrl">${escapeHtml(targetCid)}</span>
+        ${node.title ? `<span class="src">${escapeHtml(node.title)} — ${src}</span>` : `<span class="src">${src}</span>`}
+        ${tag}
+      </li>`;
+  };
+
+  const refsSection = $("#relatedRefs");
+  const refsList = $("#relatedRefsList");
+  if (refs.length) {
+    refsSection.hidden = false;
+    refsList.innerHTML = refs.map(e => renderEdge(e, e.to_control)).join("");
+  } else {
+    refsSection.hidden = true;
+  }
+
+  const refBySection = $("#relatedRefBy");
+  const refByList = $("#relatedRefByList");
+  if (refBy.length) {
+    refBySection.hidden = false;
+    refByList.innerHTML = refBy.map(e => renderEdge(e, e.from_control)).join("");
+  } else {
+    refBySection.hidden = true;
+  }
 }
 
 // Re-analyze + export controls in the gate header
@@ -546,6 +607,8 @@ function selectFinding(id, { fromSpan = false } = {}) {
   });
   const f = (state.findingsByRun.get(state.currentRunId) || []).find(x => x.id === id);
   if (!f) return hideAttestFooter();
+  // Phase II FR-XA-03 — refresh the related-controls panel for this finding's control.
+  renderRelatedControls(f);
   // Bring the card or span into view
   if (fromSpan) {
     const card = document.querySelector(`.finding-card[data-finding="${cssEsc(id)}"]`);

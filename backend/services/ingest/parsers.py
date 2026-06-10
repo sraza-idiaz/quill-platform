@@ -34,9 +34,31 @@ class Parser(Protocol):
     def parse(self, path: Path) -> list[TextBlock]: ...
 
 
+import re as _re
+
+# A line that starts a markdown heading. Used as an implicit block boundary
+# so authors who write headings without a preceding blank line (very common
+# in RMF drafts: `... text.\n## AU-2 Event Logging\n...`) still get separate
+# blocks per section.
+_HEADING_LINE_RE = _re.compile(r"\n(?=#{1,6}\s)")
+
+
 # --------------------------------------------------------------------------- #
 def _blocks_from_lines(text: str, label: str) -> list[TextBlock]:
-    """Split into paragraph blocks, tracking char offsets for locators."""
+    """Split into paragraph blocks, tracking char offsets for locators.
+
+    Block boundaries are blank lines OR markdown heading lines — so a
+    section that wasn't separated by a blank line still becomes its own
+    block. This matters for downstream control-keying: without it, a whole
+    document with only single-newline separators collapses into one mega-
+    block and every paragraph gets attributed to the first section's id.
+    """
+    # Insert an explicit blank line before any heading that doesn't have
+    # one. This preserves the source text's character offsets in the
+    # transformed string (we only ADD characters; existing ones stay put,
+    # which is what `text.find(para, offset)` relies on).
+    text = _HEADING_LINE_RE.sub("\n\n", text)
+
     blocks: list[TextBlock] = []
     offset = 0
     para_no = 0

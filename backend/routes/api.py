@@ -243,6 +243,56 @@ async def detach_artifact_from_package(package_id: str, artifact_id: str, reques
     return {"package_id": package_id, "artifact_id": artifact_id, "ok": True}
 
 
+# -- dependency graph (Phase II FR-XA-03) ---------------------------------- #
+async def _build_graph_for_artifacts(ctx, user, arts: list[Artifact]):
+    """Re-normalize every artifact in `arts` and build the dependency graph.
+
+    Normalization is cheap; we don't persist segments. If an artifact's
+    source file isn't reachable (e.g. it was uploaded in a previous process
+    that's since gone), it's quietly skipped — the graph degrades.
+    """
+    from backend.services.ingest.normalizer import normalize
+    from backend.services.analysis.dependency_graph import build_graph
+
+    segments = []
+    for a in arts:
+        p = Path(ctx.tmp_paths.get(a.id, ""))
+        if not p.exists():
+            continue
+        try:
+            segments.extend(normalize(a.id, p))
+        except Exception:  # parse error — drop this artifact from the graph
+            continue
+    baseline = await _baseline_for(ctx, user["tenant"])
+    return build_graph(segments, ctx.catalog, baseline=baseline)
+
+
+@router.get("/packages/{package_id}/graph")
+async def get_package_graph(package_id: str, request: Request, user=Depends(get_current_user)):
+    """Return the control-to-control reference graph across all artifacts in
+    the package (Phase II FR-XA-03). Used by the Attestation Gate's
+    'Related controls' panel."""
+    ctx = _ctx(request)
+    pkg = await ctx.repo.get_package(package_id, user["tenant"])
+    if not pkg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+    arts = await ctx.repo.list_artifacts_in_package(package_id, user["tenant"])
+    g = await _build_graph_for_artifacts(ctx, user, arts)
+    return g.to_dict()
+
+
+@router.get("/artifacts/{artifact_id}/graph")
+async def get_artifact_graph(artifact_id: str, request: Request, user=Depends(get_current_user)):
+    """Single-artifact dependency graph — used when a finding is reviewed
+    outside a package context (legacy / single-doc workflow)."""
+    ctx = _ctx(request)
+    a = await ctx.repo.get_artifact(artifact_id, user["tenant"])
+    if not a:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
+    g = await _build_graph_for_artifacts(ctx, user, [a])
+    return g.to_dict()
+
+
 @router.post("/packages/{package_id}/runs", status_code=status.HTTP_201_CREATED)
 async def analyze_package(package_id: str, request: Request,
                           user=Depends(require_role("engineer", "admin"))):

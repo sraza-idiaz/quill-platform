@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>QUILL — RMF Pre-Adjudication Terminal</title>
 <link rel="icon" type="image/png" href="./quill-owl.png" />
-<link rel="stylesheet" href="./styles.css?v=25" />
+<link rel="stylesheet" href="./styles.css?v=27" />
 </head>
 <body>
 
@@ -401,7 +401,26 @@
   <div class="footer-right" id="footerEnv">—</div>
 </footer>
 
-<script src="./app.js?v=25"></script>
+<!-- ─── Toast notification stack (top-right, auto-dismiss) ──────────── -->
+<div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+<!-- ─── Reusable modal dialog (centered, backdrop, focus-trapped) ───── -->
+<div id="modalBackdrop" class="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <header class="modal-header">
+      <h3 id="modalTitle">—</h3>
+      <button class="modal-close" id="modalClose" aria-label="Close">×</button>
+    </header>
+    <p class="modal-sub" id="modalSub" hidden></p>
+    <div class="modal-body" id="modalBody"></div>
+    <footer class="modal-footer">
+      <button class="btn-ghost btn-small" id="modalCancel">Cancel</button>
+      <button class="btn-small btn-primary" id="modalConfirm">Confirm</button>
+    </footer>
+  </div>
+</div>
+
+<script src="./app.js?v=27"></script>
 <script>
 (function(){
   var root=document.documentElement, KEY='quill-theme';

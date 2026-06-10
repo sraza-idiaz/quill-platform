@@ -952,3 +952,146 @@ textarea:focus-visible, .file-drop:focus-within, .nav-link:focus-visible,
 .calib-chart .bar          { fill: var(--accent); opacity: 0.85; }
 .calib-chart .bar.low      { fill: var(--text-muted); opacity: 0.5; }
 .calib-chart .label  { font-size: 10px; fill: var(--text-secondary); }
+
+/* ── Toast notifications ──────────────────────────────────────────── */
+.toast-stack {
+  position: fixed; top: 70px; right: 20px; z-index: 1000;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+  max-width: 380px;
+}
+.toast {
+  pointer-events: auto;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px; padding: 12px 16px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: 13px; color: var(--text-primary);
+  animation: toastIn 200ms ease-out;
+  font-family: var(--font-mono);
+}
+.toast.t-success { border-left-color: var(--accent); }
+.toast.t-error   { border-left-color: var(--alarm); }
+.toast.t-info    { border-left-color: var(--text-secondary); }
+.toast .toast-icon { font-size: 16px; line-height: 1; padding-top: 1px; }
+.toast.t-success .toast-icon { color: var(--accent); }
+.toast.t-error   .toast-icon { color: var(--alarm); }
+.toast .toast-body { flex: 1; line-height: 1.45; }
+.toast .toast-title { font-weight: 700; margin-bottom: 2px; }
+.toast .toast-detail { color: var(--text-secondary); font-size: 12px; }
+.toast .toast-close {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; padding: 0 4px; font-size: 16px; line-height: 1;
+}
+.toast .toast-close:hover { color: var(--text-primary); }
+.toast.is-leaving { animation: toastOut 180ms ease-in forwards; }
+@keyframes toastIn  { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes toastOut { to   { transform: translateX(20px); opacity: 0; } }
+
+/* ── Modal dialog ─────────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 900;
+  background: rgba(8, 14, 11, 0.62);
+  backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+[data-theme="light"] .modal-backdrop { background: rgba(34, 50, 41, 0.42); }
+.modal-backdrop[hidden] { display: none; }
+.modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  width: 100%; max-width: 520px;
+  box-shadow: 0 18px 56px rgba(0,0,0,0.30);
+  animation: modalIn 180ms ease-out;
+  display: flex; flex-direction: column;
+}
+@keyframes modalIn {
+  from { transform: translateY(6px) scale(0.98); opacity: 0; }
+  to   { transform: translateY(0)   scale(1);    opacity: 1; }
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px 6px;
+}
+.modal-header h3 {
+  margin: 0; font-family: var(--font-display); font-size: 16px;
+  font-weight: 700; letter-spacing: 0.02em; color: var(--text-primary);
+}
+.modal-close {
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: 22px; line-height: 1; padding: 0 6px;
+}
+.modal-close:hover { color: var(--text-primary); }
+.modal-sub {
+  margin: 0; padding: 0 22px 4px;
+  color: var(--text-secondary); font-size: 12.5px; line-height: 1.5;
+  font-family: var(--font-serif); font-style: italic;
+}
+.modal-body {
+  padding: 12px 22px 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.modal-body label {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-secondary); font-family: var(--font-display); font-weight: 600;
+}
+.modal-body input[type="text"],
+.modal-body textarea,
+.modal-body select {
+  font-family: var(--font-mono); font-size: 13px;
+  background: var(--bg-elevated); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 9px 11px; outline: none;
+}
+.modal-body textarea { resize: vertical; min-height: 70px; }
+.modal-body input:focus,
+.modal-body textarea:focus,
+.modal-body select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-subtle); }
+.modal-body .help {
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted);
+  letter-spacing: 0; text-transform: none; font-weight: 400; margin-top: -2px;
+}
+.modal-body .modal-list {
+  list-style: none; padding: 0; margin: 0;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-elevated); max-height: 240px; overflow-y: auto;
+}
+.modal-body .modal-list li {
+  padding: 10px 14px; cursor: pointer;
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-mono); font-size: 12.5px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-body .modal-list li:last-child { border-bottom: none; }
+.modal-body .modal-list li:hover { background: var(--bg-hover); }
+.modal-body .modal-list li.is-selected {
+  background: var(--accent-subtle); color: var(--accent);
+  border-left: 3px solid var(--accent); padding-left: 11px;
+}
+.modal-body .modal-list .meta { color: var(--text-muted); font-size: 11px; }
+.modal-footer {
+  padding: 14px 22px 18px;
+  display: flex; justify-content: flex-end; gap: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+.btn-primary {
+  background: var(--accent); color: #0e1613; border: 1px solid var(--accent);
+  font-family: var(--font-display); font-weight: 700;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 6px 16px; border-radius: 4px; cursor: pointer;
+  transition: var(--transition-fast);
+}
+.btn-primary:hover    { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+[data-theme="light"] .btn-primary { color: white; }
+
+/* Drag-over state for the file drop zone */
+.file-drop.is-dragging {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.file-drop.is-dragging .hint { color: var(--accent); }

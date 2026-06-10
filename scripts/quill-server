@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# quill-server — start/stop/restart/status the local QUILL dev server,
+# detached from whatever shell or tool harness invokes this script.
+#
+# Usage:
+#   scripts/quill-server up        # start (Tier 2 on by default)
+#   scripts/quill-server up no-t2  # start with Tier 2 disabled (faster)
+#   scripts/quill-server down      # stop
+#   scripts/quill-server restart   # stop + up
+#   scripts/quill-server status    # report state
+#   scripts/quill-server tail      # tail the server log
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+STATE_DIR="/tmp/quill-server"
+PID_FILE="$STATE_DIR/server.pid"
+LOG_FILE="$STATE_DIR/server.log"
+PORT="${QUILL_PORT:-8000}"
+HOST="${QUILL_HOST:-127.0.0.1}"
+
+mkdir -p "$STATE_DIR"
+
+server_pid() {
+  [[ -f "$PID_FILE" ]] || return 1
+  local pid; pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  echo "$pid"
+}
+
+is_listening() {
+  # Returns 0 if the configured port has a LISTEN socket from any process.
+  lsof -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1
+}
+
+up() {
+  local mode="${1:-with-t2}"   # 'no-t2' to disable
+  local t2_flag=1
+  [[ "$mode" == "no-t2" ]] && t2_flag=0
+
+  if server_pid >/dev/null; then
+    echo "already up (pid $(server_pid))"
+    return 0
+  fi
+
+  # If something else is on the port, refuse to start — that's how stuck
+  # processes get layered on top of each other.
+  local rogue; rogue="$(is_listening || true)"
+  if [[ -n "$rogue" ]]; then
+    echo "port $PORT already in use by pid $rogue. Run: scripts/quill-server down" >&2
+    return 1
+  fi
+
+  cd "$ROOT"
+  nohup env QUILL_ENABLE_TIER2_AT_STARTUP=$t2_flag \
+    .venv/bin/uvicorn backend.main:app --host "$HOST" --port "$PORT" --log-level info \
+    > "$LOG_FILE" 2>&1 &
+  local pid=$!
+  disown "$pid" 2>/dev/null || true
+  echo "$pid" > "$PID_FILE"
+
+  # Wait up to ~10 s for /health to respond, then report.
+  for i in $(seq 1 20); do
+    if curl -s --max-time 1 "http://$HOST:$PORT/health" >/dev/null 2>&1; then
+      echo "started (pid $pid) on http://$HOST:$PORT/ui/  · tier2_enabled=$t2_flag"
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "server didn't respond on /health after 10s. See $LOG_FILE" >&2
+  return 1
+}
+
+down() {
+  local pid; pid="$(server_pid || true)"
+  if [[ -n "${pid:-}" ]]; then
+    kill "$pid" 2>/dev/null || true
+    sleep 1
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+    echo "stopped (was pid $pid)"
+  fi
+  # Clean up any orphaned uvicorn process holding the port.
+  pkill -9 -f "uvicorn backend.main" 2>/dev/null || true
+  local rogue; rogue="$(is_listening || true)"
+  if [[ -n "$rogue" ]]; then
+    kill -9 "$rogue" 2>/dev/null || true
+    echo "killed rogue pid $rogue holding port $PORT"
+  fi
+  rm -f "$PID_FILE"
+}
+
+status() {
+  local pid; pid="$(server_pid || true)"
+  if [[ -n "${pid:-}" ]]; then
+    echo "up (pid $pid)"
+    curl -s --max-time 2 "http://$HOST:$PORT/health" 2>/dev/null \
+      | python3 -m json.tool 2>/dev/null \
+      || echo "(server pid alive but /health not responding)"
+  else
+    echo "down"
+    local rogue; rogue="$(is_listening || true)"
+    [[ -n "$rogue" ]] && echo "warning: port $PORT held by pid $rogue (orphan)"
+  fi
+}
+
+case "${1:-up}" in
+  up)       shift || true; up "${1:-with-t2}" ;;
+  down|stop) down ;;
+  restart)  down; up "${2:-with-t2}" ;;
+  status)   status ;;
+  tail)     exec tail -f "$LOG_FILE" ;;
+  *)
+    echo "usage: $0 {up [no-t2]|down|restart [no-t2]|status|tail}" >&2
+    exit 2
+    ;;
+esac

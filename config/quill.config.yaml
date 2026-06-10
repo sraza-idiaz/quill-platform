@@ -15,10 +15,13 @@ tier3_enabled: false          # cloud Tier 3 (Claude) still OFF
 # Production (Phase III) will swap host to a local Ollama daemon + mistral:24b.
 ollama:
   host: "http://localhost:11434"
-  model: "kimi-k2.5:cloud"
-  fallback_models:                   # tried in order if primary fails calibration
+  # NOTE: kimi-k2.5 / qwen3.5 / glm-5.1 require a paid Ollama Cloud subscription
+  # on this account. Demo defaults to gemma4:31b-cloud which is on the free tier.
+  # Switch back to kimi-k2.5:cloud once the subscription is active.
+  model: "gemma4:31b-cloud"
+  fallback_models:
+    - "kimi-k2.5:cloud"
     - "qwen3.5:cloud"
-    - "gemma4:31b-cloud"
     - "glm-5.1:cloud"
 enable_tier2_at_startup: true
 
@@ -36,7 +39,7 @@ circuit_breaker:
   threshold: 3
 
 # Catalog / rubric paths
-catalog_path: "config/catalog.yaml"
+catalog_path: "config/catalog-nist-800-53-rev5.yaml"
 rubric_path: "config/rubric.yaml"
 
 # Ingestion

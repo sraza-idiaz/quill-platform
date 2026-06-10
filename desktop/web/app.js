@@ -213,6 +213,26 @@ $("#fileClear").addEventListener("click", (e) => {
   resetUploadForm();
 });
 
+// Drag-and-drop onto the file-drop label. Modern, expected UX for upload.
+(function wireDragDrop() {
+  const zone = $("#fileDrop"); if (!zone) return;
+  ["dragenter", "dragover"].forEach(ev => zone.addEventListener(ev, (e) => {
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.add("is-dragging");
+  }));
+  ["dragleave", "drop"].forEach(ev => zone.addEventListener(ev, (e) => {
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.remove("is-dragging");
+  }));
+  zone.addEventListener("drop", (e) => {
+    const file = e.dataTransfer?.files?.[0]; if (!file) return;
+    // Push into the hidden <input> so the existing submit path picks it up.
+    const dt = new DataTransfer(); dt.items.add(file);
+    $("#fileInput").files = dt.files;
+    $("#fileInput").dispatchEvent(new Event("change"));
+  });
+})();
+
 $("#uploadForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = $("#fileInput").files[0];
@@ -231,26 +251,43 @@ $("#uploadForm").addEventListener("submit", async (e) => {
     resetUploadForm();
     await renderInventory();
     refreshDashboard();
-    // Open the Attestation Gate immediately on the freshly uploaded artifact
-    // (this is what users actually want after upload).
-    openGateFor(a.id);
+    // Stay on Inventory; the user clicks Analyze when ready. The previous
+    // auto-jump to the Gate hid the analyze step and was confusing.
+    toastSuccess(`Uploaded ${a.filename}`,
+                 "Click Analyze in the row to run the pipeline.");
   } catch (err) {
-    alert("Upload failed: " + err.message);
+    toastError("Upload failed", err.message);
   } finally { btn.textContent = orig; btn.disabled = false; }
 });
 
 // ─────────────────────────────────────────── Analyze ──
+// 20-minute timeout: a real SSP × Tier 2 across 370 controls runs ~9 minutes
+// on cloud Ollama. We leave a wide margin so the UI doesn't bail before
+// the backend finishes; the backend itself has no cap.
+const ANALYZE_TIMEOUT_MS = 20 * 60 * 1000;
+
 async function analyzeArtifact(artifactId) {
+  const row = document.querySelector(`[data-act="analyze"][data-id="${artifactId}"]`)?.closest("tr");
+  const btn = row?.querySelector('[data-act="analyze"]');
+  if (btn) { btn.disabled = true; btn.textContent = "Analyzing…"; }
+  const t2on = !!state.health?.tier2_analyzer;
+  toastInfo("Analysis started",
+            t2on ? "Tier 2 LLM is on — this can take 5–10 minutes."
+                 : "Tier 0+1 only — should finish in a few seconds.");
   try {
-    const run = await api(`/artifacts/${artifactId}/runs`, { method: "POST", timeout: 120000 });
+    const run = await api(`/artifacts/${artifactId}/runs`,
+                          { method: "POST", timeout: ANALYZE_TIMEOUT_MS });
     state.runByArtifact.set(artifactId, run);
     const findings = await api(`/runs/${run.id}/findings`);
     state.findingsByRun.set(run.id, findings);
     await renderInventory();
     refreshDashboard();
     updateAlertBadge();
+    toastSuccess(`Analysis complete · ${findings.length} finding${findings.length === 1 ? "" : "s"}`,
+                 "Click 'Open Gate' to review them.");
   } catch (e) {
-    alert("Analysis failed: " + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = "Analyze"; }
+    toastError("Analysis failed", e.message);
   }
 }
 
@@ -325,7 +362,7 @@ async function openGateFor(artifactId) {
   let run = state.runByArtifact.get(a.id);
   if (!run) {
     setGateBusy("Running analysis pipeline…");
-    try { run = await api(`/artifacts/${a.id}/runs`, { method: "POST", timeout: 180000 }); }
+    try { run = await api(`/artifacts/${a.id}/runs`, { method: "POST", timeout: ANALYZE_TIMEOUT_MS }); }
     catch (e) { setGateError(e.message); return; }
     state.runByArtifact.set(a.id, run);
   }
@@ -412,7 +449,7 @@ $("#reanalyzeBtn")?.addEventListener?.("click", async () => {
   const btn = $("#reanalyzeBtn");
   const orig = btn.textContent; btn.textContent = "Analyzing…"; btn.disabled = true;
   try {
-    const run = await api(`/artifacts/${state.currentArtifact.id}/runs`, { method: "POST", timeout: 180000 });
+    const run = await api(`/artifacts/${state.currentArtifact.id}/runs`, { method: "POST", timeout: ANALYZE_TIMEOUT_MS });
     state.runByArtifact.set(state.currentArtifact.id, run);
     state.currentRunId = run.id;
     state.findingsByRun.set(run.id, await api(`/runs/${run.id}/findings`));
@@ -421,7 +458,7 @@ $("#reanalyzeBtn")?.addEventListener?.("click", async () => {
     $("#findingsMeta").textContent = `${(state.findingsByRun.get(run.id) || []).length} findings`;
     updateAlertBadge();
     refreshDashboard();
-  } catch (e) { alert("Re-analyze failed: " + e.message); }
+  } catch (e) { toastError("Re-analyze failed", e.message); }
   finally { btn.textContent = orig; btn.disabled = false; }
 });
 
@@ -430,7 +467,7 @@ $("#exportPoamBtn")  ?.addEventListener?.("click", () => doExport("poam"));
 $("#exportAuditBtn") ?.addEventListener?.("click", () => doExport("audit"));
 
 async function doExport(fmt) {
-  if (!state.currentRunId) { alert("Open an analyzed artifact first."); return; }
+  if (!state.currentRunId) { toastInfo("No analyzed artifact", "Open an artifact that has been analyzed first."); return; }
   try {
     const ex = await api(`/runs/${state.currentRunId}/export`, { method: "POST", json: { format: fmt }, timeout: 60000 });
     const isJson = fmt !== "report";
@@ -441,7 +478,7 @@ async function doExport(fmt) {
     a.download = `quill-${fmt}-${state.currentRunId}.${isJson ? "json" : "md"}`;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
-  } catch (e) { alert("Export failed: " + e.message); }
+  } catch (e) { toastError("Export failed", e.message); }
 }
 
 // ─── 50/50 LEFT: Source canvas with inline dashed-underline target spans ───
@@ -649,10 +686,18 @@ function showAttestFooter(f) {
     note.value = "";
     note.disabled = false;
     $("#approveBtn").onclick = () => doAttest(f, "approved");
-    $("#editBtn").onclick    = () => {
-      const newRec = prompt("Edit the recommendation (leave blank to keep original):", f.recommendation);
+    $("#editBtn").onclick    = async () => {
+      const newRec = await modalPrompt({
+        title: "Edit recommendation",
+        subtitle: "Refine QUILL's recommendation before signing. The edit is recorded with your attestation.",
+        label: "Recommendation",
+        multiline: true,
+        initial: f.recommendation,
+        confirmLabel: "Sign as edited",
+      });
+      if (newRec == null) return;
       const edited = {};
-      if (newRec && newRec !== f.recommendation) edited.recommendation = newRec;
+      if (newRec !== f.recommendation) edited.recommendation = newRec;
       doAttest(f, "edited", edited);
     };
     $("#rejectBtn").onclick  = () => doAttest(f, "rejected");
@@ -663,9 +708,15 @@ function hideAttestFooter() { $("#attestFooter").hidden = true; }
 
 async function doAttest(f, decision, edited = null) {
   if (role() !== "attester") {
+    toastError("Attester role required",
+               `Switch the Operator dropdown (top right) to "attester". Admin is NOT auto-granted.`);
     showSealMessage(`The "Attester" role is required. Switch the Operator at the top right. Admin is NOT auto-granted.`, true);
     return;
   }
+  // Disable buttons immediately so the user sees the click took effect.
+  ["#approveBtn", "#editBtn", "#rejectBtn"].forEach(s => {
+    const b = $(s); if (b) { b.disabled = true; }
+  });
   try {
     const payload = { decision, note: $("#attestNote").value || "" };
     if (decision === "edited") payload.edited_fields = edited || {};
@@ -685,12 +736,31 @@ async function doAttest(f, decision, edited = null) {
       signedAt: resp.signed_at,
     });
 
-    // Refresh data
-    state.findingsByRun.set(state.currentRunId, await api(`/runs/${state.currentRunId}/findings`));
+    // Refresh data + UI — KEEP the current finding selected so the user
+    // sees the status badge change on the same row, not a deselected list.
+    const fresh = await api(`/runs/${state.currentRunId}/findings`);
+    state.findingsByRun.set(state.currentRunId, fresh);
     updateAlertBadge();
-    renderFindingsList(); // re-render with new status (without selecting it back, to keep seal visible)
     refreshDashboard();
+
+    const updated = fresh.find(x => x.id === f.id) || f;
+    state.currentFindingId = updated.id;
+    renderFindingsList();
+
+    const verb = { approved: "Approved", edited: "Signed as edited", rejected: "Rejected" }[decision] || decision;
+    toastSuccess(`${verb} · ${f.control_id}`,
+                 `Signed by ${role()}. Provenance ${resp.provenance_id}.`);
+
+    // Pick the next unattested finding so the reviewer can keep going.
+    const next = fresh.find(x => x.status === "unattested");
+    if (next && next.id !== updated.id) {
+      setTimeout(() => selectFinding(next.id), 600);   // small pause so user sees the seal first
+    }
   } catch (e) {
+    ["#approveBtn", "#editBtn", "#rejectBtn"].forEach(s => {
+      const b = $(s); if (b) { b.disabled = false; }
+    });
+    toastError("Attestation failed", e.message);
     showSealMessage("Attestation failed: " + e.message, true);
   }
 }
@@ -916,7 +986,7 @@ async function openPackageDetail(pkgId) {
   try {
     pkg = await api(`/packages/${pkgId}`);
   } catch (e) {
-    alert("Couldn't load package: " + e.message);
+    toastError("Could not load package", e.message);
     return;
   }
   state.currentPackage = pkg;
@@ -1010,11 +1080,17 @@ async function loadPackageWatch(pkgId) {
     section.hidden = false;
     $("#pkgUnwatchLink")?.addEventListener?.("click", async (e) => {
       e.preventDefault();
-      if (!confirm("Stop watching this folder?")) return;
+      const ok = await modalConfirm({
+        title: "Stop watching folder?",
+        message: "QUILL will no longer re-analyze when you change files in this folder. You can re-attach the watch later.",
+        confirmLabel: "Stop watching",
+      });
+      if (!ok) return;
       try {
         await api(`/packages/${pkgId}/watch`, { method: "DELETE" });
         await openPackageDetail(pkgId);
-      } catch (e) { alert("Stop-watch failed: " + e.message); }
+        toastInfo("Watch stopped");
+      } catch (e) { toastError("Stop-watch failed", e.message); }
     });
   } catch (_) {
     section.hidden = true;
@@ -1028,53 +1104,99 @@ $("#pkgCloseBtn")?.addEventListener?.("click", () => {
 });
 
 $("#pkgCreateBtn")?.addEventListener?.("click", async () => {
-  const name = prompt("Package name (e.g. 'Aerospace SSP Package'):");
-  if (!name || !name.trim()) return;
-  const desc = prompt("Description (optional):", "") || "";
-  try {
-    const pkg = await api("/packages", { method: "POST", json: { name: name.trim(), description: desc } });
-    await renderPackages();
-    openPackageDetail(pkg.id);
-  } catch (e) {
-    alert("Create package failed: " + e.message);
-  }
+  const pkg = await openModal({
+    title: "Create package",
+    subtitle: "A package bundles related artifacts (SSP + architecture + policies) so they're analyzed as one unit.",
+    confirmLabel: "Create",
+    body: (root) => {
+      const nameLbl = document.createElement("label");
+      nameLbl.innerHTML = `<span>Name</span><input type="text" placeholder="e.g. Aerospace SSP Package" />`;
+      const descLbl = document.createElement("label");
+      descLbl.innerHTML = `<span>Description (optional)</span><textarea placeholder="What is this package for?"></textarea>`;
+      root.appendChild(nameLbl);
+      root.appendChild(descLbl);
+      return { name: nameLbl.querySelector("input"), desc: descLbl.querySelector("textarea") };
+    },
+    submit: async ({ name, desc }) => {
+      const v = name.value.trim();
+      if (!v) throw new Error("Package name is required.");
+      const created = await api("/packages", {
+        method: "POST",
+        json: { name: v, description: desc.value.trim() },
+      });
+      return created;
+    },
+  });
+  if (!pkg) return;
+  toastSuccess(`Package created · ${pkg.id}`, "Attach artifacts and run analysis.");
+  await renderPackages();
+  openPackageDetail(pkg.id);
 });
 
 $("#pkgAttachBtn")?.addEventListener?.("click", async () => {
   if (!state.currentPackageId) return;
-  // Load artifacts available in this tenant
   let arts = [];
-  try { arts = await api("/artifacts"); } catch (e) { alert("Couldn't load artifacts: " + e.message); return; }
-  // Exclude artifacts already in this package
+  try { arts = await api("/artifacts"); }
+  catch (e) { toastError("Could not load artifacts", e.message); return; }
   const memberIds = new Set((state.currentPackage?.artifacts || []).map(a => a.id));
   const available = arts.filter(a => !memberIds.has(a.id) && !a.package_id);
   if (!available.length) {
-    alert("No unassigned artifacts available. Upload some via the Artifact Inventory first.");
+    toastInfo("No unassigned artifacts",
+              "Upload one in Artifact Inventory first.");
     return;
   }
-  const list = available.map((a, i) => `${i+1}. ${a.filename}  [${a.id}]`).join("\n");
-  const pick = prompt(`Pick an artifact to attach (1-${available.length}):\n\n${list}`);
-  if (!pick) return;
-  const idx = parseInt(pick, 10) - 1;
-  if (!(idx >= 0 && idx < available.length)) { alert("Invalid choice."); return; }
-  const target = available[idx];
+  const picked = await openModal({
+    title: "Attach artifact to package",
+    subtitle: "Pick an artifact already uploaded in this program. Each artifact belongs to one package at a time.",
+    confirmLabel: "Attach",
+    body: (root) => {
+      const ul = document.createElement("ul");
+      ul.className = "modal-list";
+      available.forEach((a) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${escapeHtml(a.filename)}</span>
+                        <span class="meta">${escapeHtml(a.type)} · ${escapeHtml(a.id.slice(0, 12))}</span>`;
+        li.onclick = () => {
+          ul.querySelectorAll("li").forEach(x => x.classList.remove("is-selected"));
+          li.classList.add("is-selected");
+          li.dataset.picked = "1";
+        };
+        ul.appendChild(li);
+      });
+      root.appendChild(ul);
+      return { ul };
+    },
+    submit: ({ ul }) => {
+      const sel = ul.querySelector("li.is-selected");
+      if (!sel) throw new Error("Pick an artifact first.");
+      const i = [...ul.children].indexOf(sel);
+      return available[i];
+    },
+  });
+  if (!picked) return;
   try {
-    await api(`/packages/${state.currentPackageId}/artifacts/${target.id}`, { method: "POST" });
+    await api(`/packages/${state.currentPackageId}/artifacts/${picked.id}`, { method: "POST" });
+    toastSuccess(`Attached ${picked.filename}`);
     await renderPackages();
     await openPackageDetail(state.currentPackageId);
   } catch (e) {
-    alert("Attach failed: " + e.message);
+    toastError("Attach failed", e.message);
   }
 });
 
 async function detachArtifact(pkgId, artifactId) {
-  if (!confirm(`Remove ${artifactId} from this package?`)) return;
+  const ok = await modalConfirm({
+    title: "Remove artifact from package?",
+    message: `Detach artifact ${artifactId.slice(0, 12)}… from this package. The artifact stays in Inventory and can be re-attached.`,
+    confirmLabel: "Remove",
+  });
+  if (!ok) return;
   try {
     await api(`/packages/${pkgId}/artifacts/${artifactId}`, { method: "DELETE" });
     await renderPackages();
     await openPackageDetail(pkgId);
   } catch (e) {
-    alert("Detach failed: " + e.message);
+    toastError("Detach failed", e.message);
   }
 }
 
@@ -1084,15 +1206,15 @@ $("#pkgAnalyzeBtn")?.addEventListener?.("click", async () => {
   const orig = btn.textContent;
   btn.textContent = "Analyzing…"; btn.disabled = true;
   try {
-    const run = await api(`/packages/${state.currentPackageId}/runs`, { method: "POST", timeout: 300000 });
+    const run = await api(`/packages/${state.currentPackageId}/runs`, { method: "POST", timeout: ANALYZE_TIMEOUT_MS });
     // Cache the run + findings for the detail view
     state.runByArtifact.set(`pkg:${state.currentPackageId}`, run);
     const fs = await api(`/runs/${run.id}/findings`);
     state.findingsByRun.set(run.id, fs);
     await openPackageDetail(state.currentPackageId);
-    alert(`Analyzed — ${fs.length} finding(s). Open Attestation Gate for any artifact in the package to review them.`);
+    toastSuccess(`Package analyzed · ${fs.length} finding${fs.length === 1 ? "" : "s"}`, "Open Attestation Gate to review them.");
   } catch (e) {
-    alert("Analyze failed: " + e.message);
+    toastError("Analyze failed", e.message);
   } finally {
     btn.textContent = orig; btn.disabled = false;
   }
@@ -1100,38 +1222,63 @@ $("#pkgAnalyzeBtn")?.addEventListener?.("click", async () => {
 
 $("#pkgWatchBtn")?.addEventListener?.("click", async () => {
   if (!state.currentPackageId) return;
-  const folder = prompt(
-    "Absolute path to the folder to watch.\n\n" +
-    "QUILL will poll this folder every ~5s. When a file is added or changed,\n" +
-    "the package is re-analyzed automatically and attestations on unchanged\n" +
-    "findings carry forward (FR-CONT-06).\n\n" +
-    "Example: /Users/you/work/program-x-package"
-  );
-  if (!folder || !folder.trim()) return;
+  const folder = await modalPrompt({
+    title: "Watch a folder for changes",
+    subtitle: "QUILL polls the folder every ~5s. Drop or edit files inside and the package re-analyzes automatically. Attestations on unchanged findings carry forward.",
+    label: "Absolute folder path",
+    placeholder: "/Users/you/work/program-x-package",
+    help: "Must be a folder that already exists on this machine.",
+    confirmLabel: "Start watching",
+  });
+  if (!folder) return;
   try {
     await api(`/packages/${state.currentPackageId}/watch`,
-              { method: "POST", json: { folder: folder.trim() } });
+              { method: "POST", json: { folder } });
     await openPackageDetail(state.currentPackageId);
-    alert(`Watching ${folder.trim()} — drop files in there and QUILL will re-analyze.`);
+    toastSuccess("Now watching", `Drop files into ${folder} — QUILL will re-analyze automatically.`);
   } catch (e) {
-    alert("Watch setup failed: " + e.message);
+    toastError("Watch setup failed", e.message);
   }
 });
 
 $("#pkgExportBtn")?.addEventListener?.("click", async () => {
   if (!state.currentPackageId) return;
-  const choice = prompt(
-    "Export format:\n" +
-    "  1. Stakeholder summary PDF (FR-EXP-04)\n" +
-    "  2. Version-diff report (FR-EXP-05)\n" +
-    "  3. OSCAL package bundle (FR-EXP-06)\n\n" +
-    "Enter 1, 2, or 3:"
-  );
-  const map = { "1": "stakeholder_pdf", "2": "version_diff", "3": "oscal_package" };
-  const fmt = map[(choice || "").trim()];
+  const EXPORTS = [
+    { id: "stakeholder_pdf", title: "Stakeholder summary (PDF)", sub: "1–2 page management readout", ext: "pdf" },
+    { id: "version_diff",    title: "Version-diff report (Markdown)", sub: "What changed since the last run", ext: "md" },
+    { id: "oscal_package",   title: "OSCAL bundle (JSON)", sub: "Machine-readable, ready for eMASS / Xacta", ext: "json" },
+  ];
+  const fmt = await openModal({
+    title: "Export package",
+    subtitle: "Pick what kind of deliverable you need.",
+    confirmLabel: "Download",
+    body: (root) => {
+      const ul = document.createElement("ul");
+      ul.className = "modal-list";
+      EXPORTS.forEach((e, i) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span><b>${escapeHtml(e.title)}</b><br><span class="meta">${escapeHtml(e.sub)}</span></span>`;
+        li.dataset.id = e.id;
+        li.onclick = () => {
+          ul.querySelectorAll("li").forEach(x => x.classList.remove("is-selected"));
+          li.classList.add("is-selected");
+        };
+        if (i === 0) li.classList.add("is-selected");   // default
+        ul.appendChild(li);
+      });
+      root.appendChild(ul);
+      return { ul };
+    },
+    submit: ({ ul }) => {
+      const sel = ul.querySelector("li.is-selected");
+      if (!sel) throw new Error("Pick an export format.");
+      return EXPORTS.find(e => e.id === sel.dataset.id);
+    },
+  });
   if (!fmt) return;
+
   try {
-    const res = await fetch(`/packages/${state.currentPackageId}/export?format=${fmt}`, {
+    const res = await fetch(`/packages/${state.currentPackageId}/export?format=${fmt.id}`, {
       headers: { "X-QUILL-Role": role(), "X-QUILL-Tenant": program() },
     });
     if (!res.ok) {
@@ -1142,12 +1289,12 @@ $("#pkgExportBtn")?.addEventListener?.("click", async () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const ext = fmt === "stakeholder_pdf" ? "pdf" : (fmt === "version_diff" ? "md" : "json");
-    a.download = `${state.currentPackageId}-${fmt}.${ext}`;
+    a.download = `${state.currentPackageId}-${fmt.id}.${fmt.ext}`;
     a.click();
     URL.revokeObjectURL(url);
+    toastSuccess(`Downloaded ${fmt.title}`, `Saved as ${state.currentPackageId}-${fmt.id}.${fmt.ext}`);
   } catch (e) {
-    alert("Export failed: " + e.message);
+    toastError("Export failed", e.message);
   }
 });
 
@@ -1161,17 +1308,46 @@ $("#pkgStatusBtn")?.addEventListener?.("click", async () => {
     archived:     [],
   };
   const options = TRANSITIONS[cur] || [];
-  if (!options.length) { alert(`'${cur}' is terminal — no further transitions.`); return; }
-  const pick = prompt(`Current status: ${cur}\n\nChange to one of:\n${options.map((o,i) => `${i+1}. ${o}`).join("\n")}`);
-  if (!pick) return;
-  const idx = parseInt(pick, 10) - 1;
-  if (!(idx >= 0 && idx < options.length)) { alert("Invalid choice."); return; }
+  if (!options.length) {
+    toastInfo(`'${cur}' is terminal`, "No further transitions allowed.");
+    return;
+  }
+  const pickedStatus = await openModal({
+    title: "Change package status",
+    subtitle: `Current status: ${cur.replace(/_/g, " ")}. Pick the next state.`,
+    confirmLabel: "Update",
+    body: (root) => {
+      const ul = document.createElement("ul");
+      ul.className = "modal-list";
+      options.forEach((opt, i) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${escapeHtml(opt.replace(/_/g, " "))}</span>`;
+        li.dataset.status = opt;
+        li.onclick = () => {
+          ul.querySelectorAll("li").forEach(x => x.classList.remove("is-selected"));
+          li.classList.add("is-selected");
+        };
+        if (i === 0) li.classList.add("is-selected");
+        ul.appendChild(li);
+      });
+      root.appendChild(ul);
+      return { ul };
+    },
+    submit: ({ ul }) => {
+      const sel = ul.querySelector("li.is-selected");
+      if (!sel) throw new Error("Pick a status.");
+      return sel.dataset.status;
+    },
+  });
+  if (!pickedStatus) return;
   try {
-    await api(`/packages/${state.currentPackageId}/status`, { method: "PATCH", json: { status: options[idx] } });
+    await api(`/packages/${state.currentPackageId}/status`,
+              { method: "PATCH", json: { status: pickedStatus } });
     await renderPackages();
     await openPackageDetail(state.currentPackageId);
+    toastSuccess("Status updated", `Package is now '${pickedStatus.replace(/_/g, " ")}'.`);
   } catch (e) {
-    alert("Status change failed: " + e.message);
+    toastError("Status change failed", e.message);
   }
 });
 
@@ -1223,29 +1399,63 @@ $("#role").addEventListener("change", syncProgramNewBtn);
 
 $("#programNewBtn")?.addEventListener?.("click", async () => {
   if (role() !== "admin") {
-    alert("Switch role to Admin to create a program.");
+    toastError("Admin role required", "Switch the Operator dropdown (top right) to admin to create a program.");
     return;
   }
-  const name = prompt("Program name (e.g. 'Aerospace R&D'):");
-  if (!name || !name.trim()) return;
-  const id = prompt(
-    "Program ID (lowercase, hyphens; this is the tenant key):",
-    name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-  );
-  if (!id) return;
-  const baseline = prompt("Baseline (low | moderate | high):", "moderate");
-  if (!baseline) return;
-  try {
-    const prog = await api("/programs", {
-      method: "POST",
-      json: { id: id.trim(), name: name.trim(), baseline: baseline.trim() },
-    });
-    await loadPrograms();
-    $("#program").value = prog.id;
-    applyProgram();
-  } catch (e) {
-    alert("Create program failed: " + e.message);
-  }
+  const result = await openModal({
+    title: "Create program",
+    subtitle: "A program is a tenant — its own artifacts, packages, and baselines. Use one per real-world program / customer.",
+    confirmLabel: "Create",
+    body: (root) => {
+      const nameL = document.createElement("label");
+      nameL.innerHTML = `<span>Program name</span>
+                         <input type="text" placeholder="e.g. Aerospace R&D" />
+                         <span class="help">Human-readable; shown in the dropdown.</span>`;
+      const idL = document.createElement("label");
+      idL.innerHTML = `<span>Program ID</span>
+                       <input type="text" placeholder="aerospace-r-d" />
+                       <span class="help">Lowercase, hyphens only. Used as the tenant key.</span>`;
+      const baselineL = document.createElement("label");
+      baselineL.innerHTML = `<span>Baseline</span>
+                             <select>
+                               <option value="low">Low</option>
+                               <option value="moderate" selected>Moderate</option>
+                               <option value="high">High</option>
+                             </select>
+                             <span class="help">NIST 800-53 Rev. 5 baseline this program is graded against.</span>`;
+      root.appendChild(nameL); root.appendChild(idL); root.appendChild(baselineL);
+      const nameInp = nameL.querySelector("input");
+      const idInp   = idL.querySelector("input");
+      // Live-derive the ID from the name unless the user has typed in the ID box.
+      let idTouched = false;
+      idInp.addEventListener("input", () => { idTouched = true; });
+      nameInp.addEventListener("input", () => {
+        if (!idTouched) {
+          idInp.value = nameInp.value.toLowerCase()
+                          .replace(/[^a-z0-9]+/g, "-")
+                          .replace(/^-|-$/g, "");
+        }
+      });
+      return { nameInp, idInp, baselineSel: baselineL.querySelector("select") };
+    },
+    submit: async ({ nameInp, idInp, baselineSel }) => {
+      const name = nameInp.value.trim();
+      const id   = idInp.value.trim();
+      const baseline = baselineSel.value;
+      if (!name) throw new Error("Program name is required.");
+      if (!id)   throw new Error("Program ID is required.");
+      const prog = await api("/programs", {
+        method: "POST",
+        json: { id, name, baseline },
+      });
+      return prog;
+    },
+  });
+  if (!result) return;
+  await loadPrograms();
+  $("#program").value = result.id;
+  applyProgram();
+  toastSuccess(`Program created · ${result.id}`, `Baseline: ${result.baseline.toUpperCase()}`);
 });
 
 // ─────────────────────────────────────────── init ──
@@ -1342,4 +1552,144 @@ async function renderCalibration() {
     e.preventDefault();
     window.location.href = "/calibration/curve.csv";
   };
+}
+
+// ─────────────────────────────────────────── Toast notifications ──
+// Lightweight non-blocking notifications. Use instead of alert() for success
+// and most error feedback. alert() is only for errors that must block input.
+function toast(title, detail = "", kind = "success", ms = 4000) {
+  const stack = document.getElementById("toastStack");
+  if (!stack) return;
+  const icon = kind === "success" ? "✓" : kind === "error" ? "✕" : "ⓘ";
+  const t = document.createElement("div");
+  t.className = `toast t-${kind}`;
+  t.innerHTML = `
+    <span class="toast-icon">${icon}</span>
+    <div class="toast-body">
+      <div class="toast-title">${escapeHtml(title)}</div>
+      ${detail ? `<div class="toast-detail">${escapeHtml(detail)}</div>` : ""}
+    </div>
+    <button class="toast-close" aria-label="Close">×</button>`;
+  const close = () => {
+    t.classList.add("is-leaving");
+    setTimeout(() => t.remove(), 200);
+  };
+  t.querySelector(".toast-close").onclick = close;
+  setTimeout(close, ms);
+  stack.appendChild(t);
+}
+// Convenience wrappers that respect the "blocking error" rule.
+function toastSuccess(title, detail) { toast(title, detail, "success"); }
+function toastError(title, detail)   { toast(title, detail, "error", 6000); }
+function toastInfo(title, detail)    { toast(title, detail, "info"); }
+
+// ─────────────────────────────────────────── Modal dialog ──
+// Returns a Promise that resolves to whatever the caller's submit() returns,
+// or null if the user cancels / closes / hits Escape.
+//
+//   openModal({
+//     title: "Create package",
+//     subtitle: "Bundle related artifacts so they're analyzed together.",
+//     body: (root) => { /* render inputs into root, return refs */ },
+//     confirmLabel: "Create",
+//     submit: (refs) => { /* return whatever; throw to keep modal open */ },
+//   })
+function openModal({ title, subtitle = "", body, confirmLabel = "Confirm", submit }) {
+  return new Promise((resolve) => {
+    const backdrop = document.getElementById("modalBackdrop");
+    const titleEl  = document.getElementById("modalTitle");
+    const subEl    = document.getElementById("modalSub");
+    const bodyEl   = document.getElementById("modalBody");
+    const confirm  = document.getElementById("modalConfirm");
+    const cancel   = document.getElementById("modalCancel");
+    const closeBtn = document.getElementById("modalClose");
+
+    titleEl.textContent = title;
+    if (subtitle) { subEl.textContent = subtitle; subEl.hidden = false; }
+    else          { subEl.hidden = true; }
+    bodyEl.innerHTML = "";
+    confirm.textContent = confirmLabel;
+    confirm.disabled = false;
+
+    const refs = body(bodyEl) || {};
+
+    const done = (result) => {
+      backdrop.hidden = true;
+      window.removeEventListener("keydown", onKey);
+      resolve(result);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") done(null);
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onConfirm();
+    };
+    const onConfirm = async () => {
+      confirm.disabled = true; confirm.textContent = confirmLabel + "…";
+      try {
+        const result = await submit(refs);
+        done(result);
+      } catch (e) {
+        toastError("Could not complete", e.message || String(e));
+        confirm.disabled = false; confirm.textContent = confirmLabel;
+      }
+    };
+
+    cancel.onclick   = () => done(null);
+    closeBtn.onclick = () => done(null);
+    backdrop.onclick = (e) => { if (e.target === backdrop) done(null); };
+    confirm.onclick  = onConfirm;
+    window.addEventListener("keydown", onKey);
+
+    backdrop.hidden = false;
+    // Auto-focus first input field in the body if any.
+    const firstInput = bodyEl.querySelector("input, textarea, select");
+    if (firstInput) firstInput.focus();
+  });
+}
+
+// Convenience: yes/no confirmation modal — replaces window.confirm.
+// Returns true on confirm, false on cancel/escape.
+async function modalConfirm({ title, message = "", confirmLabel = "Confirm", danger = false }) {
+  const out = await openModal({
+    title, confirmLabel,
+    body: (root) => {
+      const p = document.createElement("p");
+      p.textContent = message;
+      p.style.fontFamily = "var(--font-mono)";
+      p.style.fontSize = "13px";
+      p.style.color = "var(--text-secondary)";
+      p.style.margin = "4px 0 0";
+      root.appendChild(p);
+      return {};
+    },
+    submit: () => true,
+  });
+  return out === true;
+}
+
+// Convenience: text-input modal — like prompt() but pretty.
+async function modalPrompt({ title, subtitle, label, placeholder = "", initial = "", help = "", confirmLabel = "Save", multiline = false }) {
+  return openModal({
+    title, subtitle, confirmLabel,
+    body: (root) => {
+      const wrap = document.createElement("label");
+      wrap.innerHTML = `<span>${escapeHtml(label)}</span>`;
+      const inp = document.createElement(multiline ? "textarea" : "input");
+      if (!multiline) inp.type = "text";
+      inp.placeholder = placeholder;
+      inp.value = initial;
+      wrap.appendChild(inp);
+      if (help) {
+        const h = document.createElement("span");
+        h.className = "help"; h.textContent = help;
+        wrap.appendChild(h);
+      }
+      root.appendChild(wrap);
+      return { inp };
+    },
+    submit: ({ inp }) => {
+      const v = inp.value.trim();
+      if (!v) throw new Error("Please enter a value.");
+      return v;
+    },
+  });
 }

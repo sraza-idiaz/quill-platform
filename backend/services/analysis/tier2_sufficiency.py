@@ -238,23 +238,56 @@ def run_tier2(
     run_id: str, evidence_index: list[EvidenceIndexEntry], catalog: Catalog,
     rubric: Rubric, analyzer: Analyzer,
 ) -> list[Finding]:
-    """Score each (control, objective) with its best evidence. Deterministic order.
+    """Score each (control, objective) with its best evidence. Deterministic
+    output order.
 
     Phase II FR-XA-04: builds a family-context map once per run and passes the
     relevant slice to each per-objective call, so Tier 2 judges sufficiency in
     the context of all paragraphs in the same family (across artifacts).
+
+    Performance: LLM calls are I/O-bound (5-15s/call hitting Ollama). Running
+    them sequentially is the difference between a 5-minute run and a 25-minute
+    run on a 5-doc package. Fan out via a ThreadPoolExecutor; collect results
+    in submission order so the output stays deterministic across runs.
+
+    Concurrency is bounded by QUILL_TIER2_CONCURRENCY (default 6) — high
+    enough to hide per-call latency, low enough to stay well under any
+    plausible LLM provider rate limit.
     """
-    findings: list[Finding] = []
+    import concurrent.futures
+    import os
+
     family_context_map = build_family_context_map(evidence_index)
     best = best_evidence_per_objective(evidence_index)
-    for key in sorted(best.keys()):
-        entry = best[key]
-        finding = analyze_objective(
-            run_id, entry, catalog, rubric, analyzer,
-            family_context_map=family_context_map,
-        )
-        if finding is not None:
-            findings.append(finding)
+    keys = sorted(best.keys())
+    if not keys:
+        return []
+
+    max_workers = int(os.environ.get("QUILL_TIER2_CONCURRENCY", "6"))
+    max_workers = max(1, min(max_workers, len(keys)))
+
+    findings: list[Finding] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [
+            ex.submit(
+                analyze_objective,
+                run_id, best[key], catalog, rubric, analyzer,
+                family_context_map=family_context_map,
+            )
+            for key in keys
+        ]
+        # Collect in submission order so the output is reproducible.
+        for fut in futures:
+            try:
+                f = fut.result()
+            except Exception:
+                # Individual LLM call failed (timeout, parse error, etc.).
+                # The pipeline degrades gracefully: skip this objective,
+                # let the others land. The orchestrator's broader Tier 2
+                # try/except handles the "everything died" case.
+                continue
+            if f is not None:
+                findings.append(f)
     return findings
 
 

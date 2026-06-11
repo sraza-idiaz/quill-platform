@@ -184,6 +184,12 @@ class InMemoryRepository:
     def artifact_text(self, artifact_id: str) -> str:
         return self._artifact_text.get(artifact_id, "")
 
+    async def get_artifact_text_async(self, artifact_id: str) -> str:
+        # Symmetric surface with PostgresRepository so the route doesn't
+        # care which backend is active. InMemory never has anything to
+        # restore from — same cache the sync reader uses.
+        return self._artifact_text.get(artifact_id, "")
+
     # -- Phase II FR-CONT — run versions ---------------------------------- #
     async def save_run_version(self, version: RunVersion) -> RunVersion:
         key = (version.tenant, version.package_id)

@@ -513,7 +513,27 @@ class PostgresRepository:
             )
 
     def artifact_text(self, artifact_id: str) -> str:
-        # Cache-first. On a cold process, the orchestrator's analyze() pass
-        # has already populated the cache before invoking citation validation,
-        # so this hot-path stays synchronous.
+        # Cache-first synchronous read for the orchestrator's hot path
+        # (citation validation, called inside a single analyze() pass that
+        # has just set_artifact_text'd a moment ago). Routes that fetch text
+        # AFTER a server restart (e.g. /artifacts/{id}/text for a prior
+        # run's Gate view) must use the async variant below — it falls back
+        # to the DB.
         return self._artifact_text_cache.get(artifact_id, "")
+
+    async def get_artifact_text_async(self, artifact_id: str) -> str:
+        """Read the normalized artifact text — cache, then DB. Repopulates
+        the cache on a hit so subsequent sync reads (orchestrator hot path)
+        stay fast across a restart."""
+        cached = self._artifact_text_cache.get(artifact_id)
+        if cached is not None:
+            return cached
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT text FROM artifact_texts WHERE artifact_id=$1",
+                artifact_id,
+            )
+        text = row["text"] if row else ""
+        if text:
+            self._artifact_text_cache[artifact_id] = text
+        return text

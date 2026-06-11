@@ -554,12 +554,41 @@ async def get_artifact(artifact_id: str, request: Request, user=Depends(get_curr
 
 @router.get("/artifacts/{artifact_id}/text")
 async def get_artifact_text(artifact_id: str, request: Request, user=Depends(get_current_user)):
-    """Normalized artifact text for UI source-span highlighting (FR-UI-02)."""
+    """Normalized artifact text for UI source-span highlighting (FR-UI-02).
+
+    Async path: cache-first, then Postgres (artifact_texts table). If both
+    are empty but the artifact's raw bytes are persisted, lazily renormalize
+    them so a server restart never loses the Gate view for a prior run.
+    """
     ctx = _ctx(request)
     a = await ctx.repo.get_artifact(artifact_id, user["tenant"])
     if not a:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
-    return {"artifact_id": artifact_id, "text": ctx.repo.artifact_text(artifact_id)}
+
+    text = ""
+    # Use the async accessor when the repo supports it (Postgres). Falls
+    # back to the sync cache for InMemoryRepository.
+    if hasattr(ctx.repo, "get_artifact_text_async"):
+        text = await ctx.repo.get_artifact_text_async(artifact_id)
+    if not text:
+        text = ctx.repo.artifact_text(artifact_id)
+
+    # Last-resort: renormalize from the persisted bytes. Happens when the
+    # artifact was uploaded against a prior version of the schema that
+    # didn't persist normalized text, or when the artifact_texts row was
+    # somehow lost while the bytes survived.
+    if not text:
+        path = await _ensure_artifact_path(ctx, a)
+        if path is not None and path.exists():
+            try:
+                from backend.services.ingest.normalizer import normalize
+                segs = normalize(artifact_id, path)
+                text = "\n".join(s.text for s in segs)
+                ctx.repo.set_artifact_text(artifact_id, text)
+            except Exception:
+                text = ""
+
+    return {"artifact_id": artifact_id, "text": text}
 
 
 @router.get("/artifacts")

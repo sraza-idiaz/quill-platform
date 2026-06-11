@@ -267,16 +267,22 @@ function resetUploadForm() {
 }
 
 $("#fileInput").addEventListener("change", (e) => {
-  const f = e.target.files[0];
-  if (f) {
-    $("#fileLabel").textContent = f.name;
-    $("#fileHint").textContent  = "Selected — ready to ingest";
-    $("#fileDrop").classList.add("has-file");
-    $("#fileClear").hidden = false;
-    $("#ingestBtn").disabled = false;
-  } else {
+  const files = Array.from(e.target.files || []);
+  if (files.length === 0) {
     resetUploadForm();
+    return;
   }
+  if (files.length === 1) {
+    $("#fileLabel").textContent = files[0].name;
+    $("#fileHint").textContent  = "Selected — ready to ingest";
+  } else {
+    $("#fileLabel").textContent = `${files.length} files selected`;
+    $("#fileHint").textContent  = files.map(f => f.name).join(" · ").slice(0, 100) +
+                                  (files.length > 5 ? "…" : "");
+  }
+  $("#fileDrop").classList.add("has-file");
+  $("#fileClear").hidden = false;
+  $("#ingestBtn").disabled = false;
 });
 
 // "×" button clears the picked file. preventDefault + stopPropagation are
@@ -300,9 +306,12 @@ $("#fileClear").addEventListener("click", (e) => {
     zone.classList.remove("is-dragging");
   }));
   zone.addEventListener("drop", (e) => {
-    const file = e.dataTransfer?.files?.[0]; if (!file) return;
-    // Push into the hidden <input> so the existing submit path picks it up.
-    const dt = new DataTransfer(); dt.items.add(file);
+    const files = Array.from(e.dataTransfer?.files || []);
+    if (!files.length) return;
+    // Push ALL dropped files into the hidden <input> so the existing
+    // submit path picks them up.
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
     $("#fileInput").files = dt.files;
     $("#fileInput").dispatchEvent(new Event("change"));
   });
@@ -310,29 +319,50 @@ $("#fileClear").addEventListener("click", (e) => {
 
 $("#uploadForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const f = $("#fileInput").files[0];
-  if (!f) return;
-  const fd = new FormData(); fd.append("file", f);
+  const files = Array.from($("#fileInput").files || []);
+  if (!files.length) return;
   const btn = $("#uploadForm button[type=submit]");
   const orig = btn.textContent;
-  btn.textContent = "Ingesting…"; btn.disabled = true;
-  try {
-    const res = await fetch("/artifacts", {
-      method: "POST", body: fd,
-      headers: { "X-QUILL-Role": role(), "X-QUILL-Tenant": program() },
-    });
-    if (!res.ok) throw new Error(`${res.status} · ${await res.text()}`);
-    const a = await res.json();
-    resetUploadForm();
-    await renderInventory();
-    refreshDashboard();
-    // Stay on Inventory; the user clicks Analyze when ready. The previous
-    // auto-jump to the Gate hid the analyze step and was confusing.
-    toastSuccess(`Uploaded ${a.filename}`,
-                 "Click Analyze in the row to run the pipeline.");
-  } catch (err) {
-    toastError("Upload failed", err.message);
-  } finally { btn.textContent = orig; btn.disabled = false; }
+  btn.disabled = true;
+
+  const ok = [];
+  const failed = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    btn.textContent = files.length > 1
+      ? `Ingesting ${i + 1}/${files.length}…`
+      : "Ingesting…";
+    const fd = new FormData(); fd.append("file", f);
+    try {
+      const res = await fetch("/artifacts", {
+        method: "POST", body: fd,
+        headers: { "X-QUILL-Role": role(), "X-QUILL-Tenant": program() },
+      });
+      if (!res.ok) throw new Error(`${res.status} · ${await res.text()}`);
+      ok.push(await res.json());
+    } catch (err) {
+      failed.push({ name: f.name, err: err.message || String(err) });
+    }
+  }
+
+  resetUploadForm();
+  await renderInventory();
+  refreshDashboard();
+
+  if (ok.length && !failed.length) {
+    toastSuccess(
+      ok.length === 1 ? `Uploaded ${ok[0].filename}` : `Uploaded ${ok.length} artifacts`,
+      "Click Analyze on a row (or open Packages to bundle them).",
+    );
+  } else if (ok.length && failed.length) {
+    toastInfo(
+      `${ok.length} uploaded · ${failed.length} failed`,
+      failed.map(f => `${f.name}: ${f.err}`).join(" · ").slice(0, 200),
+    );
+  } else {
+    toastError("Upload failed", failed.map(f => `${f.name}: ${f.err}`).join(" · "));
+  }
+  btn.textContent = orig; btn.disabled = false;
 });
 
 // ─────────────────────────────────────────── Analyze ──
@@ -1234,11 +1264,20 @@ $("#pkgAttachBtn")?.addEventListener?.("click", async () => {
               "Upload one in Artifact Inventory first.");
     return;
   }
-  const picked = await openModal({
-    title: "Attach artifact to package",
-    subtitle: "Pick an artifact already uploaded in this program. Each artifact belongs to one package at a time.",
+  const pickedList = await openModal({
+    title: "Attach artifacts to package",
+    subtitle: "Click any number of artifacts to include them, then Attach. Each artifact belongs to one package at a time.",
     confirmLabel: "Attach",
     body: (root) => {
+      // Toolbar with select-all / clear shortcuts above the list.
+      const bar = document.createElement("div");
+      bar.style.cssText = "display:flex; gap:10px; align-items:center; font-size:12px; color:var(--text-muted);";
+      bar.innerHTML = `
+        <span id="attachCount">0 of ${available.length} selected</span>
+        <a href="#" id="attachSelectAll" style="margin-left:auto;">select all</a>
+        <a href="#" id="attachClear">clear</a>`;
+      root.appendChild(bar);
+
       const ul = document.createElement("ul");
       ul.className = "modal-list";
       available.forEach((a) => {
@@ -1246,30 +1285,60 @@ $("#pkgAttachBtn")?.addEventListener?.("click", async () => {
         li.innerHTML = `<span>${escapeHtml(a.filename)}</span>
                         <span class="meta">${escapeHtml(a.type)} · ${escapeHtml(a.id.slice(0, 12))}</span>`;
         li.onclick = () => {
-          ul.querySelectorAll("li").forEach(x => x.classList.remove("is-selected"));
-          li.classList.add("is-selected");
-          li.dataset.picked = "1";
+          li.classList.toggle("is-selected");
+          refreshCount();
         };
         ul.appendChild(li);
       });
       root.appendChild(ul);
+
+      const refreshCount = () => {
+        const n = ul.querySelectorAll("li.is-selected").length;
+        bar.querySelector("#attachCount").textContent = `${n} of ${available.length} selected`;
+      };
+
+      bar.querySelector("#attachSelectAll").onclick = (e) => {
+        e.preventDefault();
+        ul.querySelectorAll("li").forEach(li => li.classList.add("is-selected"));
+        refreshCount();
+      };
+      bar.querySelector("#attachClear").onclick = (e) => {
+        e.preventDefault();
+        ul.querySelectorAll("li").forEach(li => li.classList.remove("is-selected"));
+        refreshCount();
+      };
+
       return { ul };
     },
     submit: ({ ul }) => {
-      const sel = ul.querySelector("li.is-selected");
-      if (!sel) throw new Error("Pick an artifact first.");
-      const i = [...ul.children].indexOf(sel);
-      return available[i];
+      const selected = [...ul.querySelectorAll("li.is-selected")];
+      if (!selected.length) throw new Error("Pick at least one artifact.");
+      return selected.map(li => available[[...ul.children].indexOf(li)]);
     },
   });
-  if (!picked) return;
-  try {
-    await api(`/packages/${state.currentPackageId}/artifacts/${picked.id}`, { method: "POST" });
-    toastSuccess(`Attached ${picked.filename}`);
-    await renderPackages();
-    await openPackageDetail(state.currentPackageId);
-  } catch (e) {
-    toastError("Attach failed", e.message);
+  if (!pickedList || !pickedList.length) return;
+
+  const ok = [];
+  const failed = [];
+  for (const a of pickedList) {
+    try {
+      await api(`/packages/${state.currentPackageId}/artifacts/${a.id}`, { method: "POST" });
+      ok.push(a);
+    } catch (e) {
+      failed.push({ name: a.filename, err: e.message || String(e) });
+    }
+  }
+  await renderPackages();
+  await openPackageDetail(state.currentPackageId);
+  if (ok.length && !failed.length) {
+    toastSuccess(
+      ok.length === 1 ? `Attached ${ok[0].filename}` : `Attached ${ok.length} artifacts`,
+    );
+  } else if (ok.length && failed.length) {
+    toastInfo(`${ok.length} attached · ${failed.length} failed`,
+              failed.map(f => `${f.name}: ${f.err}`).join(" · "));
+  } else {
+    toastError("Attach failed", failed.map(f => `${f.name}: ${f.err}`).join(" · "));
   }
 });
 

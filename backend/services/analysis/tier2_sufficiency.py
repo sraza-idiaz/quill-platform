@@ -262,17 +262,37 @@ def run_tier2(
 # Analyzers
 # --------------------------------------------------------------------------- #
 class OllamaAnalyzer:
-    """Real local analyzer (FR-T2-04). Calls Ollama on-box; zero egress."""
+    """Ollama-backed Tier 2 analyzer.
 
-    def __init__(self, host: str, model: str):
+    Two deployment patterns:
+      * **Local daemon** (default, dev) — `host="http://localhost:11434"`. The
+        local Ollama process talks to ollama.com directly for `:cloud`
+        models; no API key needs to live in this code path.
+      * **Ollama Cloud direct** (production / Render) — `host="https://ollama.com"`
+        and an `api_key` set from env (OLLAMA_API_KEY). The Python client
+        sends `Authorization: Bearer <key>` on every request.
+
+    `air_gap` mode means: the orchestrator builds NO analyzer (Tier 0+1
+    only). This class never enforces air-gap by itself — that policy lives
+    in build_context().
+    """
+
+    def __init__(self, host: str, model: str, api_key: Optional[str] = None):
         self.host = host
         self.model = model
+        self.api_key = api_key
         self.name = "ollama"
-        self.version = model
+        # Include the host so calibration provenance distinguishes
+        # local-daemon vs Ollama-Cloud runs of the same model.
+        self.version = f"{model}@{host}"
+
+    def _client(self):
+        import ollama
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else None
+        return ollama.Client(host=self.host, headers=headers)
 
     def score(self, **kw) -> SufficiencyResult:  # pragma: no cover (needs running Ollama)
-        import ollama
-        client = ollama.Client(host=self.host)
+        client = self._client()
         prompt = build_prompt(
             kw["control_id"], kw["objective_text"], kw["evidence_text"],
             kw["required_elements"], kw["required_methods"],

@@ -79,7 +79,19 @@ def build_context(analyzer: Optional[Analyzer] = None, config_path: Optional[Pat
     air_gap = _envbool("QUILL_AIR_GAP", cfg.get("air_gap", True))
     enable_t2 = _envbool("QUILL_ENABLE_TIER2_AT_STARTUP", cfg.get("enable_tier2_at_startup", False))
     if analyzer is None and cfg.get("ollama") and enable_t2:
-        analyzer = OllamaAnalyzer(cfg["ollama"]["host"], cfg["ollama"]["model"])
+        ocfg = cfg["ollama"]
+        # OLLAMA_HOST  (env) overrides config — typically:
+        #   * local:        http://localhost:11434   (default)
+        #   * Render demo:  https://ollama.com       (Ollama Cloud direct)
+        # OLLAMA_API_KEY required when host points at ollama.com.
+        # OLLAMA_MODEL allows swapping the active model without a code change
+        # (useful when one model loses subscription access mid-deploy).
+        host    = os.environ.get("OLLAMA_HOST",  ocfg.get("host",  "http://localhost:11434"))
+        model   = os.environ.get("OLLAMA_MODEL", ocfg.get("model", "gemma4:31b-cloud"))
+        api_key = os.environ.get("OLLAMA_API_KEY") or None
+        logger.info("OllamaAnalyzer: host=%s model=%s auth=%s",
+                    host, model, "bearer" if api_key else "none")
+        analyzer = OllamaAnalyzer(host, model, api_key=api_key)
 
     orch = Orchestrator(repo, catalog, rubric, analyzer=analyzer, synonyms=synonyms)
     signer = signer or make_default_signer()

@@ -18,7 +18,7 @@ from typing import Optional
 import yaml
 from fastapi import FastAPI
 
-from backend.db.repository import InMemoryRepository
+from backend.db.repository import InMemoryRepository, Repository
 from backend.services.catalog_loader import Catalog, Rubric, load_catalog, load_rubric
 from backend.services.orchestrator import Orchestrator
 from backend.services.analysis.tier2_sufficiency import Analyzer, OllamaAnalyzer
@@ -37,7 +37,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @dataclass
 class QuillContext:
-    repo: InMemoryRepository
+    # InMemoryRepository at startup; PostgresRepository after _attach_postgres_if_configured
+    # runs in lifespan. Both satisfy the Repository Protocol.
+    repo: Repository
     catalog: Catalog
     rubric: Rubric
     orchestrator: Orchestrator
@@ -110,12 +112,43 @@ def build_context(analyzer: Optional[Analyzer] = None, config_path: Optional[Pat
     )
 
 
+async def _attach_postgres_if_configured(ctx: "QuillContext") -> None:
+    """If DATABASE_URL is set, swap the in-memory repo for a Postgres-backed
+    one and rewire the orchestrator + change-request service references.
+
+    Doing the upgrade here (in lifespan) rather than inside build_context
+    keeps build_context synchronous, which all existing tests rely on.
+    """
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        logger.info("Persistence: in-memory (set DATABASE_URL for Postgres)")
+        return
+    try:
+        from backend.db.postgres_repository import PostgresRepository
+        pg = await PostgresRepository.create(dsn)
+        # Mirror artifact-text cache: re-uploaded files set this synchronously
+        # at ingest, so the cold-cache case isn't a concern for the running
+        # session; old uploads survive because the texts table persists them.
+        # Three references to swap in lock-step:
+        ctx.repo = pg
+        ctx.orchestrator.repo = pg
+        ctx.cr_service.repo = pg
+        logger.info("Persistence: Postgres attached — state survives restarts")
+    except Exception as e:  # noqa: BLE001
+        logger.error("Persistence: Postgres attach FAILED (%s); falling back "
+                     "to in-memory. Set DATABASE_URL to a reachable instance "
+                     "to enable persistence.", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.quill = getattr(app.state, "quill", None) or build_context()
-    # Phase II FR-CONT-01 — wire the watcher callback to the orchestrator.
     ctx = app.state.quill
 
+    # Upgrade to Postgres if DATABASE_URL is set (Render production).
+    await _attach_postgres_if_configured(ctx)
+
+    # Phase II FR-CONT-01 — wire the watcher callback to the orchestrator.
     async def _on_change(ev: WatchEvent) -> None:
         from backend.services.continuous_runner import handle_watch_event
         await handle_watch_event(ctx, ev)
@@ -124,14 +157,22 @@ async def lifespan(app: FastAPI):
     if os.environ.get("QUILL_WATCHER_ENABLED", "1") == "1":
         await ctx.watcher.start()
 
-    logger.info("QUILL up — baseline=%s controls=%d air_gap=%s breaker=%d watcher=%s",
+    logger.info("QUILL up — baseline=%s controls=%d air_gap=%s breaker=%d watcher=%s repo=%s",
                 ctx.catalog.baseline, len(ctx.catalog.controls),
                 ctx.air_gap, ctx.rubric.circuit_breaker_threshold,
-                "on" if ctx.watcher._task is not None else "off")
+                "on" if ctx.watcher._task is not None else "off",
+                type(ctx.repo).__name__)
     try:
         yield
     finally:
         await ctx.watcher.stop()
+        # Clean shutdown of the Postgres pool (if attached) so connections
+        # don't leak on graceful restarts.
+        if hasattr(ctx.repo, "close"):
+            try:
+                await ctx.repo.close()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Postgres pool close failed: %s", e)
 
 
 def create_app(context: Optional[QuillContext] = None) -> FastAPI:

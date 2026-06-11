@@ -362,6 +362,20 @@ async function analyzeArtifact(artifactId) {
                  "Click 'Open Gate' to review them.");
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = "Analyze"; }
+    // 404 = the artifact your browser is showing no longer exists on the
+    // server (typical after a redeploy of the in-memory store). Surface a
+    // useful message and refresh the inventory so the stale row disappears.
+    if (e?.status === 404) {
+      toastError("Artifact no longer on server",
+                 "The server doesn't have this artifact anymore — likely a recent redeploy. " +
+                 "Refreshing your inventory now; please re-upload to analyze.");
+      try {
+        state.runByArtifact.delete(artifactId);
+        await renderInventory();
+        refreshDashboard();
+      } catch (_) { /* swallow secondary errors */ }
+      return;
+    }
     toastError("Analysis failed", e.message);
   }
 }

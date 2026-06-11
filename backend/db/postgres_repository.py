@@ -157,6 +157,9 @@ class PostgresRepository:
         repo = cls(pool)
         await repo._migrate()
         await repo._bootstrap_default_program()
+        n = await repo.reset_zombie_statuses()
+        if n:
+            logger.info("Reset %d zombie 'analyzing' rows from a prior crash", n)
         return repo
 
     async def _migrate(self) -> None:
@@ -175,6 +178,30 @@ class PostgresRepository:
                 ON CONFLICT (id) DO NOTHING
                 """
             )
+
+    async def reset_zombie_statuses(self) -> int:
+        """A previous process can leave artifacts in 'analyzing' status if it
+        crashed mid-run. On fresh boot there is no analysis in flight, so
+        anything marked 'analyzing' is a zombie. Reset to 'ingested' and
+        mark partially-finished runs as 'failed' for honesty.
+
+        Returns the total number of rows reset (for the boot log)."""
+        async with self._pool.acquire() as conn:
+            arts = await conn.execute(
+                "UPDATE artifacts SET status='ingested' WHERE status='analyzing'"
+            )
+            runs = await conn.execute(
+                """
+                UPDATE runs SET status='failed',
+                                failure_reason=COALESCE(failure_reason,'') || ' (orphaned by restart)'
+                WHERE status IN ('pending','analyzing')
+                """
+            )
+        # asyncpg returns "UPDATE n" strings; parse the count out.
+        def _n(s: str) -> int:
+            parts = s.split()
+            return int(parts[-1]) if parts and parts[-1].isdigit() else 0
+        return _n(arts) + _n(runs)
 
     async def close(self) -> None:
         await self._pool.close()

@@ -82,22 +82,42 @@ class Orchestrator:
         for a, _ in items:
             await self.repo.update_artifact_status(a.id, a.tenant, ArtifactStatus.analyzing)
 
+        # A bad artifact (parse error, missing bytes) used to abort the whole
+        # package run and leave the OTHER artifacts pinned at status='analyzing'
+        # forever (no finally-block reset). Now: skip the bad ones, run the rest,
+        # surface failures in run.failure_reason so the UI can show them.
         all_segments = []
         artifact_texts: dict[str, str] = {}
+        skipped: list[tuple[str, str]] = []
         for a, path in items:
             try:
                 segs = normalize(a.id, path)
             except ParseError as e:
-                run.status = RunStatus.failed
-                run.failure_reason = f"{a.filename}: {e}"
-                await self.repo.save_run(run, tenant=tenant)
+                logger.warning("run %s: skipping %s (%s)", run.id, a.filename, e)
                 await self.repo.update_artifact_status(a.id, a.tenant, ArtifactStatus.failed)
-                logger.warning("run %s failed on %s: %s", run.id, a.filename, e)
-                return run
+                skipped.append((a.filename, str(e)))
+                continue
             all_segments += segs
             txt = "\n".join(s.text for s in segs)
             self.repo.set_artifact_text(a.id, txt)
             artifact_texts[a.id] = txt
+
+        # If EVERYTHING failed to parse, mark the run failed; otherwise carry on.
+        if not all_segments:
+            run.status = RunStatus.failed
+            run.failure_reason = "all artifacts failed to parse: " + \
+                "; ".join(f"{n}: {e}" for n, e in skipped)
+            await self.repo.save_run(run, tenant=tenant)
+            # Reset any unmarked artifacts (shouldn't be any, but be defensive).
+            for a, _ in items:
+                await self.repo.update_artifact_status(a.id, a.tenant, ArtifactStatus.failed)
+            return run
+        if skipped:
+            # Record skipped files but keep the run as `completed` since the
+            # surviving artifacts produced output. UI can read failure_reason
+            # to surface which files were skipped.
+            run.failure_reason = "skipped: " + \
+                "; ".join(f"{n} ({e})" for n, e in skipped)
 
         catalog_refs = {f"catalog:{active_baseline}"}
         breaker = CircuitBreaker(self.rubric.circuit_breaker_threshold)
@@ -126,7 +146,10 @@ class Orchestrator:
                     all_findings.append(f)
             except Exception as e:  # noqa: BLE001
                 logger.warning("Tier 2 unavailable (%s); degrading to T0+T1", e)
-                run.failure_reason = f"tier2_degraded: {e}"
+                t2_note = f"tier2_degraded: {e}"
+                run.failure_reason = (
+                    f"{run.failure_reason}; {t2_note}" if run.failure_reason else t2_note
+                )
 
         valid, rejected = validate_findings(all_findings, artifact_texts, catalog_refs)
         if rejected:

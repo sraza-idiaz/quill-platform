@@ -26,6 +26,16 @@ const state = {
 // ─────────────────────────────────────────── API ──
 function role()    { return $("#role").value; }
 function program() { return $("#program") ? $("#program").value : "default"; }
+// Subclass of Error that carries the HTTP status so callers (especially
+// refreshHealth) can branch on auth vs cold-start vs network failures.
+class ApiError extends Error {
+  constructor(message, status, kind) {
+    super(message);
+    this.status = status;        // numeric HTTP status, or 0 for network/timeout
+    this.kind = kind;            // 'auth' | 'cold_start' | 'network' | 'timeout' | 'http'
+  }
+}
+
 async function api(path, opts = {}) {
   const headers = {
     "X-QUILL-Role":   role(),
@@ -42,12 +52,21 @@ async function api(path, opts = {}) {
   let res;
   try { res = await fetch(path, { ...opts, headers, signal: controller.signal }); }
   catch (e) {
-    if (e.name === "AbortError") throw new Error("backend timeout (server unreachable on http://localhost:8000)");
-    throw new Error(`network: ${e.message}`);
+    if (e.name === "AbortError") throw new ApiError("request timed out", 0, "timeout");
+    throw new ApiError(`network: ${e.message}`, 0, "network");
   } finally { clearTimeout(t); }
   const ct = res.headers.get("content-type") || "";
   const body = ct.includes("json") ? await res.json() : await res.text();
-  if (!res.ok) throw new Error(`${res.status} · ${(body && body.detail) || body || res.statusText}`);
+  if (!res.ok) {
+    const kind = res.status === 401 ? "auth"
+               : (res.status === 502 || res.status === 503 || res.status === 504) ? "cold_start"
+               : "http";
+    throw new ApiError(
+      `${res.status} · ${(body && body.detail) || body || res.statusText}`,
+      res.status,
+      kind,
+    );
+  }
   return body;
 }
 
@@ -94,16 +113,19 @@ function hideBackendBanner() {
   if (bar) bar.remove();
 }
 
+// Track whether we are mid-cold-start so we don't spawn parallel retry loops.
+let _coldStartRetrying = false;
+
 async function refreshHealth() {
   try {
     const h = await api("/health");
     state.health = h;
 
-    // Operational mode chip (no more 'demo mode' nag)
     const airChip = $("#airgapChip");
     airChip.textContent = h.air_gap ? "Air-Gap" : "Live";
     airChip.className = "env-chip ok";
     hideBackendBanner();
+    _coldStartRetrying = false;
 
     $("#tier2Chip").textContent  = h.tier2_analyzer ? `T2 · ${h.tier2_analyzer}` : "T2 · disabled";
     $("#tier2Chip").className    = h.tier2_analyzer ? "env-chip ok" : "env-chip";
@@ -112,15 +134,68 @@ async function refreshHealth() {
       `baseline · ${escapeHtml(h.baseline)}<br>controls · ${h.controls_loaded}<br>tier 2 · ${escapeHtml(h.tier2_analyzer || "—")}`;
     $("#footerEnv").textContent = `${h.air_gap ? "Air-Gap" : "Live"} · baseline ${h.baseline} · ${h.controls_loaded} controls · breaker ${h.circuit_breaker_threshold}`;
 
-    // Dashboard breaker max
     $("#metric-breaker-max").textContent = h.circuit_breaker_threshold;
+    return;
   } catch (e) {
-    $("#airgapChip").textContent = "BACKEND UNREACHABLE";
-    $("#airgapChip").className = "env-chip error";
-    showBackendBanner(
-      `<b>Backend unreachable.</b> Open <a href="http://localhost:8000/ui/">http://localhost:8000/ui/</a> in a regular browser tab. (${escapeHtml(e.message)})`
-    );
+    handleHealthError(e);
   }
+}
+
+// Distinguishes login-required, cold-start (auto-retry), and real outages.
+function handleHealthError(e) {
+  const chip = $("#airgapChip");
+  const isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  const kind = (e && e.kind) || "network";
+
+  if (kind === "auth") {
+    chip.textContent = "LOGIN REQUIRED"; chip.className = "env-chip warn";
+    showBackendBanner(
+      `<b>Login required.</b> This deploy is behind HTTP Basic Auth. ` +
+      `<a href="#" onclick="location.reload();return false;">Click to refresh</a> ` +
+      `and enter your username and password.`
+    );
+    return;
+  }
+
+  if (kind === "cold_start") {
+    chip.textContent = "STARTING…"; chip.className = "env-chip warn";
+    showBackendBanner(
+      `<b>Server is starting up.</b> Render's free tier sleeps after 15 minutes of ` +
+      `inactivity; first request can take 30–60 seconds. Retrying automatically…`
+    );
+    if (!_coldStartRetrying) {
+      _coldStartRetrying = true;
+      let attempts = 0;
+      const tick = async () => {
+        attempts++;
+        if (attempts > 12) {                  // ~2 min of trying then give up
+          _coldStartRetrying = false;
+          chip.textContent = "BACKEND UNREACHABLE"; chip.className = "env-chip error";
+          showBackendBanner(
+            `<b>Server didn't wake up.</b> Try ` +
+            `<a href="/health" target="_blank">/health</a> directly, or check the ` +
+            `Render dashboard for build / runtime errors.`
+          );
+          return;
+        }
+        try {
+          await api("/health");
+          _coldStartRetrying = false;
+          refreshHealth();                    // success → full reload of chips
+        } catch (_) { setTimeout(tick, 10000); }
+      };
+      setTimeout(tick, 10000);
+    }
+    return;
+  }
+
+  // network / timeout / unexpected HTTP — actual outage
+  chip.textContent = "BACKEND UNREACHABLE"; chip.className = "env-chip error";
+  const hint = isLocal
+    ? `Start the server: <code>scripts/quill-server up</code>`
+    : `Check the deployed app's health at ` +
+      `<a href="/health" target="_blank">/health</a> or the Render dashboard.`;
+  showBackendBanner(`<b>Backend unreachable.</b> ${hint} (${escapeHtml(e.message || "")})`);
 }
 
 // ─────────────────────────────────────────── Package id derivation ──

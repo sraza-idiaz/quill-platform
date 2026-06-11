@@ -1,0 +1,38 @@
+name: Keep Render deploy warm
+
+# Render's free tier spins services down after ~15 minutes of inactivity.
+# That breaks demos — first request takes 30-60s. This workflow pings
+# /health every 10 minutes so the service never sleeps.
+#
+# GitHub Actions scheduled workflows can drift slightly behind their
+# schedule under load; an actual ping every 10 minutes is sufficient
+# margin to keep us inside Render's 15-minute idle window.
+
+on:
+  schedule:
+    # */10 = every 10 minutes
+    - cron: "*/10 * * * *"
+  workflow_dispatch:        # allow manual "wake it now" from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping /health
+        run: |
+          set -eu
+          URL="https://quill-sr8l.onrender.com/health"
+          # Try up to 3 times — first request after sleep can take 30-60s.
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt → $URL"
+            if curl -fsS --max-time 60 -o /tmp/resp.json "$URL"; then
+              echo "✓ Awake. Response:"
+              cat /tmp/resp.json
+              exit 0
+            fi
+            echo "  failed, sleeping 20s before retry"
+            sleep 20
+          done
+          echo "✕ Could not reach /health after 3 attempts"
+          exit 1

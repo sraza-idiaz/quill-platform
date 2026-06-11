@@ -11,6 +11,7 @@ completes with T0 findings + flags the rest for human review. Idempotent
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -135,7 +136,16 @@ class Orchestrator:
             run.model = self.analyzer.name
             run.model_version = self.analyzer.version
             try:
-                t2 = run_tier2(run.id, evidence_index, self.catalog, self.rubric, self.analyzer)
+                # CRITICAL: run_tier2 is synchronous and makes blocking HTTP
+                # calls to the LLM (5-30s per objective × dozens of objectives).
+                # On Render, that blocks the FastAPI event loop, which means
+                # /health can't respond → Render's 5s probe times out →
+                # worker is killed and the analysis dies. Run in a worker
+                # thread so the event loop stays free.
+                t2 = await asyncio.to_thread(
+                    run_tier2, run.id, evidence_index, self.catalog,
+                    self.rubric, self.analyzer,
+                )
                 run.tier_path.append(Tier.t2)
                 for f in t2:
                     f = apply_disposition(f, self.rubric)
@@ -244,7 +254,12 @@ class Orchestrator:
             run.model = self.analyzer.name
             run.model_version = self.analyzer.version
             try:
-                t2 = run_tier2(run.id, evidence_index, self.catalog, self.rubric, self.analyzer)
+                # Synchronous LLM calls must NOT block the event loop —
+                # see analyze_package for the rationale.
+                t2 = await asyncio.to_thread(
+                    run_tier2, run.id, evidence_index, self.catalog,
+                    self.rubric, self.analyzer,
+                )
                 run.tier_path.append(Tier.t2)
                 # confidence disposition + circuit breaker
                 emitted: list[Finding] = []

@@ -610,10 +610,19 @@ async def _ensure_artifact_path(ctx, artifact: Artifact) -> Path | None:
     """Return a usable filesystem path for the artifact's content. If the
     cached tmp file still exists, use it. Otherwise reconstitute it from
     the repository's persisted bytes (Postgres) and re-cache. Returns None
-    if no bytes are available anywhere (truly lost)."""
-    cached = Path(ctx.tmp_paths.get(artifact.id, ""))
-    if cached.exists():
-        return cached
+    if no bytes are available anywhere (truly lost).
+
+    IMPORTANT: an empty string in tmp_paths must NOT be treated as a valid
+    cached path. Path("").exists() returns True (resolves to the current
+    working directory!), which silently returned an empty-suffix path to
+    the parser, which then threw 'Unsupported artifact type: '. Always
+    require a non-empty cache entry before trusting .exists().
+    """
+    cached_str = ctx.tmp_paths.get(artifact.id) or ""
+    if cached_str:
+        cached = Path(cached_str)
+        if cached.exists() and cached.is_file():
+            return cached
     # The orchestrator-owned tmp file is gone (free-tier disk wiped on
     # restart). Pull the bytes back from the repo, write a fresh tmp file
     # with the original suffix, and re-cache.

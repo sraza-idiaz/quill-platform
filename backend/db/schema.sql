@@ -40,6 +40,10 @@ CREATE TABLE IF NOT EXISTS packages (
 CREATE INDEX IF NOT EXISTS packages_tenant_idx ON packages (tenant);
 
 -- ---- artifacts ---------------------------------------------------------- --
+-- The `content` column stores the original uploaded bytes. Without this,
+-- restarts wipe Render's /tmp and the orchestrator can't re-parse the
+-- artifact (Postgres has the metadata but not the file). With it, the
+-- orchestrator lazily reconstitutes the tmp file from the DB row.
 CREATE TABLE IF NOT EXISTS artifacts (
     id          TEXT NOT NULL,
     tenant      TEXT NOT NULL,
@@ -50,9 +54,13 @@ CREATE TABLE IF NOT EXISTS artifacts (
     uploaded_by TEXT,
     status      TEXT NOT NULL DEFAULT 'ingested',
     package_id  TEXT,
+    content     BYTEA,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant, id)
 );
+-- For deployments that pre-date the column being part of CREATE TABLE.
+-- Safe on fresh installs (no-op when the column already exists).
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS content BYTEA;
 CREATE INDEX IF NOT EXISTS artifacts_tenant_idx ON artifacts (tenant);
 CREATE INDEX IF NOT EXISTS artifacts_package_idx ON artifacts (tenant, package_id);
 

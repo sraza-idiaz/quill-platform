@@ -83,6 +83,7 @@ async def handle_watch_event(ctx: "QuillContext", ev: WatchEvent) -> None:
         tmp = Path(tempfile.gettempdir()) / f"quill-{uuid.uuid4().hex}{suffix}"
         shutil.copyfile(src, tmp)
         new_hash = compute_hash(tmp)
+        content = tmp.read_bytes()
 
         art = by_name.get(src.name)
         if art is None:
@@ -97,13 +98,13 @@ async def handle_watch_event(ctx: "QuillContext", ev: WatchEvent) -> None:
                 tenant=ev.tenant,
                 package_id=ev.package_id,
             )
-            await ctx.repo.save_artifact(art)
+            await ctx.repo.save_artifact_with_content(art, content)
             logger.info("watch event: new artifact %s (%s)", art.id, src.name)
         elif art.hash != new_hash:
             # Hash changed — record the new content; orchestrator's
             # citation validator will re-check spans.
             art.hash = new_hash
-            await ctx.repo.save_artifact(art)
+            await ctx.repo.save_artifact_with_content(art, content)
             logger.info("watch event: artifact %s content changed (%s)",
                         art.id, src.name)
         ctx.tmp_paths[art.id] = str(tmp)

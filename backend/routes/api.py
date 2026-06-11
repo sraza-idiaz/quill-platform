@@ -257,8 +257,8 @@ async def _build_graph_for_artifacts(ctx, user, arts: list[Artifact]):
 
     segments = []
     for a in arts:
-        p = Path(ctx.tmp_paths.get(a.id, ""))
-        if not p.exists():
+        p = await _ensure_artifact_path(ctx, a)
+        if p is None or not p.exists():
             continue
         try:
             segments.extend(normalize(a.id, p))
@@ -310,13 +310,15 @@ async def analyze_package(package_id: str, request: Request,
     if not arts:
         raise HTTPException(status.HTTP_409_CONFLICT, "package has no artifacts")
 
-    # Build (artifact, path) tuples for the orchestrator. Skip artifacts
-    # whose source file has gone missing rather than crashing the whole run.
+    # Build (artifact, path) tuples for the orchestrator. _ensure_artifact_path
+    # reconstitutes any missing tmp file from persisted bytes (Postgres);
+    # only artifacts uploaded BEFORE bytes-persistence shipped remain truly
+    # missing and are reported.
     items: list[tuple[Artifact, Path]] = []
     missing: list[str] = []
     for a in arts:
-        p = Path(ctx.tmp_paths.get(a.id, ""))
-        if p.exists():
+        p = await _ensure_artifact_path(ctx, a)
+        if p is not None and p.exists():
             items.append((a, p))
         else:
             missing.append(a.id)
@@ -527,8 +529,12 @@ async def upload_artifact(request: Request, file: UploadFile,
         uploaded_by=user["user"],
         tenant=user["tenant"],
     )
-    await ctx.repo.save_artifact(artifact)
-    ctx.tmp_paths[artifact.id] = str(tmp)  # dev: keep path for analysis
+    # Persist bytes to the repository so artifacts survive restarts. The
+    # tmp path is still cached on the context for hot-path access; if it
+    # ever goes missing (restart on free-tier disk), the analyze route
+    # reconstitutes it from the DB row.
+    await ctx.repo.save_artifact_with_content(artifact, data)
+    ctx.tmp_paths[artifact.id] = str(tmp)
     ctx.audit.append(
         tenant=user["tenant"], actor=user["user"], action="artifact.ingested",
         target_type="artifact", target_id=artifact.id,
@@ -571,6 +577,29 @@ async def _baseline_for(ctx, tenant: str) -> str | None:
     return p.baseline if p and p.baseline else None
 
 
+async def _ensure_artifact_path(ctx, artifact: Artifact) -> Path | None:
+    """Return a usable filesystem path for the artifact's content. If the
+    cached tmp file still exists, use it. Otherwise reconstitute it from
+    the repository's persisted bytes (Postgres) and re-cache. Returns None
+    if no bytes are available anywhere (truly lost)."""
+    cached = Path(ctx.tmp_paths.get(artifact.id, ""))
+    if cached.exists():
+        return cached
+    # The orchestrator-owned tmp file is gone (free-tier disk wiped on
+    # restart). Pull the bytes back from the repo, write a fresh tmp file
+    # with the original suffix, and re-cache.
+    if not hasattr(ctx.repo, "get_artifact_content"):
+        return None
+    content = await ctx.repo.get_artifact_content(artifact.id, artifact.tenant)
+    if content is None:
+        return None
+    suffix = Path(artifact.filename or "").suffix.lower() or ".md"
+    tmp = Path(tempfile.gettempdir()) / f"quill-{uuid.uuid4().hex}{suffix}"
+    tmp.write_bytes(content)
+    ctx.tmp_paths[artifact.id] = str(tmp)
+    return tmp
+
+
 @router.post("/artifacts/{artifact_id}/runs", status_code=status.HTTP_201_CREATED)
 async def create_run(artifact_id: str, request: Request,
                      user=Depends(require_role("engineer", "admin"))):
@@ -578,8 +607,8 @@ async def create_run(artifact_id: str, request: Request,
     a = await ctx.repo.get_artifact(artifact_id, user["tenant"])
     if not a:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
-    path = Path(ctx.tmp_paths.get(artifact_id, ""))
-    if not path.exists():
+    path = await _ensure_artifact_path(ctx, a)
+    if path is None or not path.exists():
         raise HTTPException(status.HTTP_409_CONFLICT, "artifact content unavailable")
     # Per-program baseline override (Phase II FR-MT-01 / FR-CAT-05).
     baseline = await _baseline_for(ctx, user["tenant"])

@@ -262,6 +262,10 @@ class PostgresRepository:
 
     # ---- artifacts ------------------------------------------------------- #
     async def save_artifact(self, artifact: Artifact) -> Artifact:
+        # Note: this overload does NOT touch the content column. To persist
+        # bytes (first upload, content edit), use save_artifact_with_content.
+        # A bare save_artifact must NEVER overwrite existing content with
+        # NULL — that would silently lose the file on every metadata update.
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
@@ -279,6 +283,41 @@ class PostgresRepository:
                 artifact.uploaded_by, artifact.status.value, artifact.package_id,
             )
         return await self.get_artifact(artifact.id, artifact.tenant)  # type: ignore[return-value]
+
+    async def save_artifact_with_content(self, artifact: Artifact, content: bytes) -> Artifact:
+        """Persist artifact metadata AND raw bytes in one transaction.
+        Called by the upload route on ingest and by continuous_runner when
+        the watcher detects a file change."""
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO artifacts (id, tenant, type, filename, hash, source,
+                                       uploaded_by, status, package_id, content)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                ON CONFLICT (tenant, id) DO UPDATE SET
+                  type=EXCLUDED.type, filename=EXCLUDED.filename,
+                  hash=EXCLUDED.hash, source=EXCLUDED.source,
+                  uploaded_by=EXCLUDED.uploaded_by, status=EXCLUDED.status,
+                  package_id=EXCLUDED.package_id, content=EXCLUDED.content
+                """,
+                artifact.id, artifact.tenant, artifact.type.value,
+                artifact.filename, artifact.hash, artifact.source,
+                artifact.uploaded_by, artifact.status.value, artifact.package_id,
+                content,
+            )
+        return await self.get_artifact(artifact.id, artifact.tenant)  # type: ignore[return-value]
+
+    async def get_artifact_content(self, artifact_id: str, tenant: str) -> Optional[bytes]:
+        """Read the raw bytes for an artifact, or None if it was uploaded
+        before bytes-persistence shipped."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT content FROM artifacts WHERE tenant=$1 AND id=$2",
+                tenant, artifact_id,
+            )
+        if not row:
+            return None
+        return bytes(row["content"]) if row["content"] is not None else None
 
     async def get_artifact(self, artifact_id: str, tenant: str) -> Optional[Artifact]:
         async with self._pool.acquire() as conn:

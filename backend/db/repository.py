@@ -41,6 +41,10 @@ class Repository(Protocol):
     async def get_artifact(self, artifact_id: str, tenant: str) -> Optional[Artifact]: ...
     async def list_artifacts(self, tenant: str) -> list[Artifact]: ...
     async def update_artifact_status(self, artifact_id: str, tenant: str, status) -> None: ...
+    # Optional content persistence — only PostgresRepository implements it
+    # today; InMemoryRepository keeps bytes in a side cache.
+    async def save_artifact_with_content(self, artifact: Artifact, content: bytes) -> Artifact: ...
+    async def get_artifact_content(self, artifact_id: str, tenant: str) -> Optional[bytes]: ...
 
     async def save_run(self, run: Run) -> Run: ...
     async def get_run(self, run_id: str, tenant: str) -> Optional[Run]: ...
@@ -61,6 +65,7 @@ class InMemoryRepository:
         self._runs: dict[tuple[str, str], Run] = {}
         self._findings: dict[tuple[str, str], Finding] = {}
         self._artifact_text: dict[str, str] = {}  # artifact_id -> normalized text (for citation validation)
+        self._artifact_bytes: dict[tuple[str, str], bytes] = {}  # (tenant, artifact_id) -> raw bytes
         # Phase II FR-CONT — package version registry. List per (tenant, package_id),
         # most recent last. Each entry carries finding signatures so version
         # diffs don't have to re-load Finding rows.
@@ -133,6 +138,15 @@ class InMemoryRepository:
         a = self._artifacts.get((tenant, artifact_id))
         if a:
             a.status = status
+
+    async def save_artifact_with_content(self, artifact: Artifact, content: bytes) -> Artifact:
+        # In-memory: stash bytes in a side cache. Survives the process lifetime
+        # but obviously not restarts — that's why Postgres exists.
+        self._artifact_bytes[(artifact.tenant, artifact.id)] = content
+        return await self.save_artifact(artifact)
+
+    async def get_artifact_content(self, artifact_id: str, tenant: str) -> Optional[bytes]:
+        return self._artifact_bytes.get((tenant, artifact_id))
 
     # -- runs --------------------------------------------------------------- #
     async def save_run(self, run: Run, tenant: str = "default") -> Run:

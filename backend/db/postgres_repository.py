@@ -405,13 +405,24 @@ class PostgresRepository:
     async def replace_findings(self, run_id: str, tenant: str,
                                 findings: list[Finding]) -> None:
         # Idempotency: delete the prior findings for this run, then insert.
+        #
+        # Dedupe by finding.id (last-write-wins) — the orchestrator can emit
+        # the same logical id from Tier 0 + Tier 2 paths (e.g. a 'missing'
+        # finding for AC-2 from coverage + a 'missing' finding for AC-2 from
+        # a different rule). InMemoryRepository silently overwrites dupes
+        # via dict assignment; Postgres would otherwise raise
+        # UniqueViolationError on findings_pkey. Match the in-memory
+        # semantics here so the orchestrator's contract stays the same.
+        deduped: dict[str, Finding] = {}
+        for f in findings:
+            deduped[f.id] = f
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
                     "DELETE FROM findings WHERE tenant=$1 AND run_id=$2",
                     tenant, run_id,
                 )
-                if findings:
+                if deduped:
                     await conn.executemany(
                         """
                         INSERT INTO findings (id, tenant, run_id, control_id, objective_id,
@@ -431,7 +442,7 @@ class PostgresRepository:
                                 f.tier.value, f.status.value, f.needs_review,
                                 f.created_at,
                             )
-                            for f in findings
+                            for f in deduped.values()
                         ],
                     )
 

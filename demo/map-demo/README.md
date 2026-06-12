@@ -12,32 +12,60 @@ narratives × ~6 min Tier 2 = manageable demo time).
 
 ---
 
+## The three planted contradictions
+
+Tier 0's cross-document consistency check is **frequency-based** — it
+canonicalizes phrases like "quarterly" ↔ "every 90 days" and flags the
+same control mentioned with **different normalized frequency values
+across artifacts**. So the three planted conflicts are all frequency
+mismatches:
+
+| Control | Conflict | Document pair |
+|---|---|---|
+| **AC-2** | review cadence | SSP says monthly · Identity Policy says quarterly |
+| **AU-11** | log retention | SSP says 90 days · Operations Runbook says 365 days |
+| **AT-2** | training cadence | SSP says annually · Identity Policy says quarterly |
+
+(Authentication-mode conflicts like password-vs-PIV won't fire from
+Tier 0 alone — they need Tier 2's family-coherence judgment. The
+documents are styled realistically but only frequency-style conflicts
+are reliable demo material on this rule.)
+
 ## The four documents in v1/
 
-| File | What it is | Used to plant... |
+| File | What it is | Contains... |
 |---|---|---|
-| `01_System_Security_Plan.md` | The SSP under review | Three control narratives that conflict with the supporting docs |
-| `02_Architecture_Document.md` | System architecture | **IA-2 conflict** — claims PIV, SSP claims password |
-| `03_Identity_Access_Policy.md` | Account governance | **AC-2 conflict** — quarterly review, SSP says monthly |
-| `04_Operations_Runbook.md` | Operations procedures | **AU-11 conflict** — 365-day retention, SSP says 90 days |
+| `01_System_Security_Plan.md` | The SSP under review | The three "weak" sides of the planted conflicts |
+| `02_Architecture_Document.md` | System architecture | Compatible narratives + shared controls (gives a 4th node) |
+| `03_Identity_Access_Policy.md` | Account governance | Quarterly AC-2 review, quarterly AT-2 training (the conflicting side) |
+| `04_Operations_Runbook.md` | Operations procedures | 365-day AU-11 retention (the conflicting side) |
 
 What you should see on the Map after the first analysis:
 
 ```
-           Architecture ─────coral⚠ IA-2────── SSP
-                │  grey                          │  grey
-                │                                │
-                grey      Identity Policy        coral⚠ AC-2
-                │           │                    │
-                └───grey────┼──────coral⚠ AU-11───Operations Runbook
-                            │                    │
-                            └─────────grey───────┘
+                Architecture           Operations Runbook
+                   │                          │
+                   │  grey                    │  grey
+                   │                          │  coral⚠ AU-11
+                   ├──────── SSP ─────────────┤
+                   │         │ │
+                   │  grey   │ │  coral⚠ AC-2
+                   │         │ │  coral⚠ AT-2
+                   │     Identity Policy
 ```
 
-- 4 nodes
-- 3 coral solid lines (the contradictions)
-- 6 grey thin lines (every pair shares ≥1 control)
-- 0 green dashed yet (no prior version)
+- 4 nodes (one per document)
+- 3 coral solid lines (verified to fire on Tier 0 alone, no LLM needed):
+  - SSP ↔ Identity Policy on **AC-2** (monthly vs quarterly)
+  - SSP ↔ Identity Policy on **AT-2** (annually vs quarterly) — yes, two
+    coral edges between the same pair of docs; they visually stack
+  - SSP ↔ Operations Runbook on **AU-11** (90 days vs annually)
+- 6 grey thin lines (every pair shares at least one control)
+- 0 green dashed yet (no prior version exists)
+
+After dropping `v2/01_System_Security_Plan.md` over the v1 SSP and
+re-analyzing, all 3 coral lines turn into **green dashed ✓ resolved**
+edges. Verified end-to-end.
 
 ---
 

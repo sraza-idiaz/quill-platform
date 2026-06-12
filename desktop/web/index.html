@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>QUILL — RMF Pre-Adjudication Terminal</title>
 <link rel="icon" type="image/png" href="./quill-owl.png" />
-<link rel="stylesheet" href="./styles.css?v=27" />
+<link rel="stylesheet" href="./styles.css?v=28" />
 </head>
 <body>
 
@@ -202,6 +202,7 @@
             <button class="btn-ghost btn-small" id="pkgAttachBtn">+ Attach artifact</button>
             <button class="btn-ghost btn-small" id="pkgAnalyzeBtn">↻ Analyze package</button>
             <button class="btn-ghost btn-small" id="pkgWatchBtn" title="Watch a folder for changes — auto-re-run on edit">👁 Watch folder</button>
+            <button class="btn-ghost btn-small" id="pkgMapBtn" title="Cross-document relationship map">🗺 Map</button>
             <button class="btn-ghost btn-small" id="pkgExportBtn" title="Stakeholder PDF / Version-Diff / OSCAL package">⬇ Export</button>
             <button class="btn-ghost btn-small" id="pkgStatusBtn">→ Change status</button>
             <button class="btn-ghost btn-small" id="pkgCloseBtn" aria-label="close">×</button>
@@ -393,6 +394,60 @@
       </div>
     </div>
 
+    <!-- ============ VIEW 06: CROSS-DOCUMENT MAP (Phase II) ============ -->
+    <div class="view-frame" id="view-map">
+      <header class="view-header map-header">
+        <div class="map-header-left">
+          <button class="btn-ghost btn-small" id="mapBackBtn" aria-label="back to packages">← Packages</button>
+          <div>
+            <h2>Cross-Document Map</h2>
+            <p class="view-sub" id="mapSubtitle">—</p>
+          </div>
+        </div>
+      </header>
+
+      <div class="map-canvas-wrap" id="mapCanvasWrap">
+        <svg id="mapSvg" class="map-svg" xmlns="http://www.w3.org/2000/svg">
+          <g id="mapViewport"></g>
+        </svg>
+
+        <!-- Package-level findings mini-card, pinned top-right -->
+        <div class="map-pkg-findings" id="mapPkgFindings" hidden>
+          <div class="map-pkg-findings-label">Package-level findings</div>
+          <div class="map-pkg-findings-dots" id="mapPkgFindingsDots"></div>
+          <div class="map-pkg-findings-note">Findings citing the baseline catalog rather than a specific document</div>
+        </div>
+
+        <!-- Banner overlay for empty / error states -->
+        <div class="map-banner" id="mapBanner" hidden></div>
+
+        <!-- Legend, pinned bottom-left -->
+        <div class="map-legend" id="mapLegend" hidden>
+          <div class="map-legend-row">
+            <svg class="map-legend-swatch" viewBox="0 0 28 10" aria-hidden="true"><line x1="1" y1="5" x2="27" y2="5" class="legend-contradiction"/></svg>
+            <span>Contradiction (active)</span>
+          </div>
+          <div class="map-legend-row">
+            <svg class="map-legend-swatch" viewBox="0 0 28 10" aria-hidden="true"><line x1="1" y1="5" x2="27" y2="5" class="legend-resolved"/></svg>
+            <span>Resolved since last run</span>
+          </div>
+          <div class="map-legend-row">
+            <svg class="map-legend-swatch" viewBox="0 0 28 10" aria-hidden="true"><line x1="1" y1="5" x2="27" y2="5" class="legend-shared"/></svg>
+            <span>Shared controls</span>
+          </div>
+        </div>
+
+        <!-- Detail drawer, slides in from the right -->
+        <aside class="map-drawer" id="mapDrawer" hidden>
+          <header class="map-drawer-header">
+            <span class="map-drawer-title" id="mapDrawerTitle">Detail</span>
+            <button class="map-drawer-close" id="mapDrawerClose" aria-label="close">×</button>
+          </header>
+          <div class="map-drawer-body" id="mapDrawerBody"></div>
+        </aside>
+      </div>
+    </div>
+
   </section>
 </main>
 
@@ -420,7 +475,7 @@
   </div>
 </div>
 
-<script src="./app.js?v=30"></script>
+<script src="./app.js?v=31"></script>
 <script>
 (function(){
   var root=document.documentElement, KEY='quill-theme';

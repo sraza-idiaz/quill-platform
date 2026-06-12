@@ -21,6 +21,8 @@ const state = {
   currentPackage: null,
   // Phase II FR-XA-03 — dependency graph for the active artifact/package
   graph: null,
+  // Phase II — cross-document Package Map payload (GET /packages/{id}/map)
+  packageMap: null,
 };
 
 // ─────────────────────────────────────────── API ──
@@ -83,6 +85,8 @@ function switchView(viewId) {
   if (viewId === "packages")    renderPackages();
   if (viewId === "audit")       refreshAudit();
   if (viewId === "calibration") renderCalibration();
+  // "map" intentionally has no auto-render here — it's driven by renderPackageMap(pkgId)
+  // from the package-detail "Map" button, which switches the view and fetches in one shot.
 }
 
 // Sidebar nav handler — extra logic so clicking the Gate when nothing is loaded
@@ -462,7 +466,13 @@ function setGateEmpty() {
   hideAttestFooter();
 }
 
-async function openGateFor(artifactId) {
+// opts (optional):
+//   { runId, findingId } — a "deep link" into a specific run + finding (used by
+//   the cross-document Map drawer). When runId is provided we MUST NOT auto-POST
+//   a new analysis run: the run already exists and re-running it would mint a new
+//   run id (and burn minutes of LLM time). We pin state.currentRunId = runId,
+//   load that run's findings, and, after rendering, select findingId if given.
+async function openGateFor(artifactId, opts = {}) {
   setGateBusy("Loading artifact…");
 
   // Ensure data is fresh
@@ -477,15 +487,20 @@ async function openGateFor(artifactId) {
   $("#gateContext").textContent =
     `Reviewing artifact ${a.filename}  ·  Package ${packageIdFor(a)}  ·  Baseline ${state.health?.baseline || "—"}`;
 
-  // Auto-analyze if no run yet
-  let run = state.runByArtifact.get(a.id);
-  if (!run) {
-    setGateBusy("Running analysis pipeline…");
-    try { run = await api(`/artifacts/${a.id}/runs`, { method: "POST", timeout: ANALYZE_TIMEOUT_MS }); }
-    catch (e) { setGateError(e.message); return; }
-    state.runByArtifact.set(a.id, run);
+  // Resolve the run. On a deep link (opts.runId) use it verbatim — never analyze.
+  // Otherwise fall back to the cached run, auto-analyzing only if none exists.
+  let runId = opts.runId || null;
+  if (!runId) {
+    let run = state.runByArtifact.get(a.id);
+    if (!run) {
+      setGateBusy("Running analysis pipeline…");
+      try { run = await api(`/artifacts/${a.id}/runs`, { method: "POST", timeout: ANALYZE_TIMEOUT_MS }); }
+      catch (e) { setGateError(e.message); return; }
+      state.runByArtifact.set(a.id, run);
+    }
+    runId = run.id;
   }
-  state.currentRunId = run.id;
+  state.currentRunId = runId;
   setGateBusy("Loading findings…");
 
   // Pull text + findings
@@ -494,15 +509,20 @@ async function openGateFor(artifactId) {
     state.artifactText = txt.text || "";
   } catch { state.artifactText = ""; }
   try {
-    state.findingsByRun.set(run.id, await api(`/runs/${run.id}/findings`));
+    state.findingsByRun.set(runId, await api(`/runs/${runId}/findings`));
   } catch (e) { setGateError(e.message); return; }
 
   renderSourceCanvas();
   renderFindingsList();
-  $("#findingsMeta").textContent = `${(state.findingsByRun.get(run.id) || []).length} findings`;
+  $("#findingsMeta").textContent = `${(state.findingsByRun.get(runId) || []).length} findings`;
   $("#gateActions").hidden = false;
   await loadGraphForCurrent();      // Phase II FR-XA-03 — preload the dependency graph
   updateAlertBadge();
+
+  // Deep-link target: select the specific finding once the list exists.
+  // renderFindingsList() default-selects the first unattested finding; this
+  // override jumps to the finding the Map drawer pointed at.
+  if (opts.findingId) selectFinding(opts.findingId);
 }
 
 // ── Phase II FR-XA-03 — dependency graph + related controls ──────────── //
@@ -1711,6 +1731,669 @@ async function renderCalibration() {
     window.location.href = "/calibration/curve.csv";
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CROSS-DOCUMENT PACKAGE MAP (Phase II — relationship canvas)
+// A Figma-style page-link view: artifact cards on a radial layout, connected by
+// relationship lines (contradiction / resolved / shared_controls). Click a line
+// to open a detail drawer. Pan by dragging the background; wheel to zoom.
+// Vanilla SVG, hand-rolled like renderCalibration — no graph library.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+// Card geometry + interaction state shared across the render + pan/zoom helpers.
+const MAP_CARD_W = 210;
+const MAP_CARD_H = 88;
+const _mapView = {
+  // pan/zoom transform applied to #mapViewport
+  tx: 0, ty: 0, scale: 1,
+  // node positions keyed by artifact_id: { x, y } = card CENTER in viewport coords
+  pos: {},
+  // currently selected node id (for dim/highlight) or null
+  selectedNode: null,
+  // adjacency: artifact_id -> Set(neighbour artifact_ids) including itself
+  adj: {},
+};
+
+const _svgEl = (name, attrs = {}) => {
+  const el = document.createElementNS(SVG_NS, name);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+};
+
+// Severity ordering used to pick the dot row + colors.
+const MAP_SEV_ORDER = ["critical", "high", "medium", "low"];
+const MAP_SEV_VAR = {
+  critical: "var(--sev-critical)",
+  high:     "var(--sev-high)",
+  medium:   "var(--sev-medium)",
+  low:      "var(--sev-low)",
+};
+
+// Entry point — wired to #pkgMapBtn. Switches to the map view and fetches.
+async function renderPackageMap(pkgId) {
+  if (!pkgId) return;
+  switchView("map");
+
+  // Subtitle: package name (if we have it cached) + a placeholder run chip.
+  const pkgName = (state.currentPackage && state.currentPackage.id === pkgId)
+    ? state.currentPackage.name : pkgId;
+  $("#mapSubtitle").innerHTML = `${escapeHtml(pkgName)} · <span class="map-run-chip">loading…</span>`;
+
+  // Reset transient view state + UI for a fresh render.
+  _mapView.tx = 0; _mapView.ty = 0; _mapView.scale = 1;
+  _mapView.pos = {}; _mapView.selectedNode = null; _mapView.adj = {};
+  $("#mapViewport").innerHTML = "";
+  closeMapDrawer();
+  $("#mapLegend").hidden = true;
+  $("#mapPkgFindings").hidden = true;
+  showMapBanner("", false);
+
+  let map;
+  try {
+    map = await api(`/packages/${pkgId}/map`);
+  } catch (e) {
+    state.packageMap = null;
+    $("#mapSubtitle").innerHTML = `${escapeHtml(pkgName)} · <span class="map-run-chip alarm">unavailable</span>`;
+    toastError("Could not load map", e.message);
+    showMapBanner(`Could not load the cross-document map. ${escapeHtml(e.message || "")}`, true);
+    return;
+  }
+
+  state.packageMap = map;
+
+  // Subtitle run chip — show the run id, or a "no runs" hint.
+  const runChip = map.run_id
+    ? `<span class="map-run-chip">run ${escapeHtml(map.run_id)}</span>`
+    : `<span class="map-run-chip warn">no runs yet</span>`;
+  $("#mapSubtitle").innerHTML = `${escapeHtml(pkgName)} · ${runChip}`;
+
+  renderMapPkgFindings(map.package_level_findings || {});
+  drawPackageMap(map);
+}
+
+// Top-right mini-card: package-level (catalog) findings.
+function renderMapPkgFindings(counts) {
+  const card = $("#mapPkgFindings");
+  const dots = $("#mapPkgFindingsDots");
+  const nonZero = MAP_SEV_ORDER.filter(s => (counts[s] || 0) > 0);
+  if (!nonZero.length) {
+    // Still show the card but make the zero-state explicit (it's informative).
+    dots.innerHTML = `<span class="map-pkg-none">none</span>`;
+  } else {
+    dots.innerHTML = nonZero.map(s =>
+      `<span class="map-sev-pill"><span class="map-sev-dot" style="background:${MAP_SEV_VAR[s]}"></span>${counts[s]}</span>`
+    ).join("");
+  }
+  card.hidden = false;
+}
+
+// Build the SVG scene: nodes on a radial layout, edges as grouped beziers.
+function drawPackageMap(map) {
+  const wrap = $("#mapCanvasWrap");
+  const svg = $("#mapSvg");
+  const vp = $("#mapViewport");
+  vp.innerHTML = "";
+
+  const nodes = map.nodes || [];
+  const W = wrap.clientWidth  || 900;
+  const H = wrap.clientHeight || 560;
+  // Match the SVG's internal coordinate system to its pixel size so 1 unit = 1px
+  // at scale 1 (keeps pan/zoom math intuitive).
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  // ── Empty / edge-case banners ───────────────────────────────────────────
+  if (!map.run_id) {
+    showMapBanner("No analysis runs yet — click Analyze package first.", false);
+  } else if (nodes.length === 0) {
+    showMapBanner("No artifacts attached to this package.", false);
+  } else if (nodes.length === 1) {
+    // Center the single node, with a hint.
+    showMapBanner("Attach more artifacts to see relationships.", false);
+  } else if (!(map.edges || []).length) {
+    showMapBanner("No cross-document relationships detected.", false);
+  } else {
+    showMapBanner("", false);
+  }
+
+  // ── Radial layout: place card CENTERS ───────────────────────────────────
+  const cx = W / 2, cy = H / 2;
+  _mapView.pos = {};
+  if (nodes.length === 1) {
+    _mapView.pos[nodes[0].artifact_id] = { x: cx, y: cy };
+  } else if (nodes.length === 2) {
+    // Side by side.
+    const gap = Math.max(MAP_CARD_W + 120, W * 0.32);
+    _mapView.pos[nodes[0].artifact_id] = { x: cx - gap / 2, y: cy };
+    _mapView.pos[nodes[1].artifact_id] = { x: cx + gap / 2, y: cy };
+  } else {
+    // Even spacing on a circle. Radius scales with N so cards don't collide,
+    // but is clamped to fit the canvas.
+    const minR = MAP_CARD_W * 0.95;
+    const wantR = (nodes.length * (MAP_CARD_W + 40)) / (2 * Math.PI);
+    const maxR = Math.min(W, H) / 2 - MAP_CARD_H;
+    const R = Math.max(minR, Math.min(wantR, Math.max(minR, maxR)));
+    nodes.forEach((n, i) => {
+      // Start at top (-90°) and go clockwise.
+      const ang = -Math.PI / 2 + (2 * Math.PI * i) / nodes.length;
+      _mapView.pos[n.artifact_id] = {
+        x: cx + R * Math.cos(ang),
+        y: cy + R * Math.sin(ang),
+      };
+    });
+  }
+
+  // ── Build adjacency for click-to-highlight ──────────────────────────────
+  _mapView.adj = {};
+  nodes.forEach(n => { _mapView.adj[n.artifact_id] = new Set([n.artifact_id]); });
+  (map.edges || []).forEach(e => {
+    if (_mapView.adj[e.source]) _mapView.adj[e.source].add(e.target);
+    if (_mapView.adj[e.target]) _mapView.adj[e.target].add(e.source);
+  });
+
+  // ── Layered <g> groups so shared_controls render UNDER everything ────────
+  const gEdgesUnder = _svgEl("g", { class: "map-edges-under" });   // shared_controls
+  const gEdgesOver  = _svgEl("g", { class: "map-edges-over" });    // resolved + contradiction
+  const gNodes      = _svgEl("g", { class: "map-nodes" });
+  vp.appendChild(gEdgesUnder);
+  vp.appendChild(gEdgesOver);
+  vp.appendChild(gNodes);
+
+  // ── Group edges by (source,target,kind) so we draw one path per group ────
+  // Use an UNORDERED pair key for the offset bucket so A→B and B→A curve apart
+  // consistently, but keep source/target for geometry direction.
+  const groups = new Map();   // key -> { source, target, kind, edges: [] }
+  for (const e of (map.edges || [])) {
+    if (!_mapView.pos[e.source] || !_mapView.pos[e.target]) continue;  // dangling edge — skip
+    const key = `${e.source}|${e.target}|${e.kind}`;
+    if (!groups.has(key)) groups.set(key, { source: e.source, target: e.target, kind: e.kind, edges: [] });
+    groups.get(key).edges.push(e);
+  }
+
+  // Assign a curve offset index per unordered node-pair so multiple groups
+  // (e.g. shared_controls + contradiction between the same two docs) fan out.
+  const pairBuckets = new Map();  // unorderedPairKey -> array of group keys (insertion order)
+  for (const [key, g] of groups) {
+    const pk = [g.source, g.target].sort().join("~");
+    if (!pairBuckets.has(pk)) pairBuckets.set(pk, []);
+    pairBuckets.get(pk).push(key);
+  }
+
+  // Render order: shared_controls first (underneath), then resolved, then contradiction.
+  const KIND_LAYER = { shared_controls: gEdgesUnder, resolved: gEdgesOver, contradiction: gEdgesOver };
+  const KIND_RANK  = { shared_controls: 0, resolved: 1, contradiction: 2 };
+  const sortedGroups = [...groups.values()].sort(
+    (a, b) => (KIND_RANK[a.kind] ?? 9) - (KIND_RANK[b.kind] ?? 9)
+  );
+
+  for (const g of sortedGroups) {
+    const layer = KIND_LAYER[g.kind] || gEdgesOver;
+    const pk = [g.source, g.target].sort().join("~");
+    const bucket = pairBuckets.get(pk) || [];
+    const idxInPair = Math.max(0, bucket.indexOf(`${g.source}|${g.target}|${g.kind}`));
+    drawEdgeGroup(layer, g, idxInPair, bucket.length);
+  }
+
+  // ── Render node cards last (on top) ──────────────────────────────────────
+  nodes.forEach(n => gNodes.appendChild(buildNodeCard(n)));
+
+  // Legend is meaningful once there's at least one relationship to read.
+  $("#mapLegend").hidden = !(map.edges || []).length;
+
+  // ── Background click clears node selection + closes drawer ───────────────
+  svg.onclick = (ev) => {
+    if (ev.target === svg || ev.target === vp) {
+      clearMapNodeSelection();
+      closeMapDrawer();
+    }
+  };
+
+  applyMapTransform();
+  enableMapPanZoom(svg);
+}
+
+// Cubic-bezier path between the EDGE MIDPOINTS of two cards, with a
+// perpendicular curve offset so parallel edges between the same pair fan out.
+function mapEdgePath(source, target, offsetIndex, offsetCount) {
+  const a = _mapView.pos[source], b = _mapView.pos[target];
+  if (!a || !b) return null;
+  // Anchor on the card border facing the other card (approx: clamp the center-to-center
+  // vector to the card's half-extent box).
+  const p0 = cardBorderPoint(a, b);
+  const p1 = cardBorderPoint(b, a);
+
+  const dx = p1.x - p0.x, dy = p1.y - p0.y;
+  const len = Math.hypot(dx, dy) || 1;
+  // Perpendicular unit vector.
+  const nx = -dy / len, ny = dx / len;
+  // Fan offset: center the set around 0, ~26px between siblings.
+  const spread = 26;
+  const off = offsetCount > 1 ? (offsetIndex - (offsetCount - 1) / 2) * spread : 0;
+  const mx = (p0.x + p1.x) / 2 + nx * off;
+  const my = (p0.y + p1.y) / 2 + ny * off;
+
+  // Two control points pulled toward the offset midpoint give a smooth arc.
+  const c1x = (p0.x + mx) / 2, c1y = (p0.y + my) / 2;
+  const c2x = (p1.x + mx) / 2, c2y = (p1.y + my) / 2;
+  return {
+    d: `M ${p0.x} ${p0.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p1.x} ${p1.y}`,
+    mid: { x: mx, y: my },
+  };
+}
+
+// Point on the border of the card centered at `from`, in the direction of `to`.
+function cardBorderPoint(from, to) {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const hw = MAP_CARD_W / 2, hh = MAP_CARD_H / 2;
+  if (dx === 0 && dy === 0) return { x: from.x, y: from.y };
+  // Scale the vector so it lands on the rectangle edge.
+  const sx = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+  const sy = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+  const s = Math.min(sx, sy);
+  return { x: from.x + dx * s, y: from.y + dy * s };
+}
+
+// Draw one edge GROUP (already grouped by source,target,kind) into `layer`.
+function drawEdgeGroup(layer, group, offsetIndex, offsetCount) {
+  const geo = mapEdgePath(group.source, group.target, offsetIndex, offsetCount);
+  if (!geo) return;
+
+  const g = _svgEl("g", { class: `map-edge map-edge-${group.kind}` });
+  g.dataset.source = group.source;
+  g.dataset.target = group.target;
+
+  // Visible path — styling per kind.
+  const path = _svgEl("path", { d: geo.d, fill: "none", class: "map-edge-line" });
+  if (group.kind === "shared_controls") {
+    path.setAttribute("stroke", "var(--border-strong)");
+    path.setAttribute("stroke-width", "1");
+    path.setAttribute("opacity", "0.6");
+  } else if (group.kind === "resolved") {
+    path.setAttribute("stroke", "var(--accent)");
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("stroke-dasharray", "6 4");
+  } else { // contradiction
+    path.setAttribute("stroke", "var(--alarm)");
+    path.setAttribute("stroke-width", "2.5");
+  }
+  g.appendChild(path);
+
+  // shared_controls has no badge and (per spec) no hover/click affordance —
+  // it's purely contextual underlay.
+  if (group.kind === "shared_controls") {
+    layer.appendChild(g);
+    return;
+  }
+
+  // Wide invisible hit path for comfortable hovering/clicking (standard trick).
+  const hit = _svgEl("path", {
+    d: geo.d, fill: "none", stroke: "transparent",
+    "stroke-width": "14", class: "map-edge-hit",
+  });
+  g.appendChild(hit);
+
+  // Midpoint badge.
+  const badge = _svgEl("g", { class: "map-edge-badge" });
+  const circle = _svgEl("circle", { cx: geo.mid.x, cy: geo.mid.y, r: "11" });
+  const label = _svgEl("text", {
+    x: geo.mid.x, y: geo.mid.y, "text-anchor": "middle",
+    "dominant-baseline": "central", class: "map-edge-badge-text",
+  });
+  if (group.kind === "resolved") {
+    circle.setAttribute("fill", "var(--bg-elevated)");
+    circle.setAttribute("stroke", "var(--accent)");
+    label.setAttribute("fill", "var(--accent)");
+    label.textContent = "✓";
+  } else { // contradiction
+    circle.setAttribute("fill", "var(--bg-elevated)");
+    circle.setAttribute("stroke", "var(--alarm)");
+    label.setAttribute("fill", "var(--alarm)");
+    label.textContent = "⚠";
+  }
+  badge.appendChild(circle);
+  badge.appendChild(label);
+
+  // Contradiction groups bundling >1 finding get a small count bubble on the
+  // badge's upper-right, so the ⚠ stays readable.
+  if (group.kind === "contradiction" && group.edges.length > 1) {
+    const bx = geo.mid.x + 9, by = geo.mid.y - 9;
+    const cnt = _svgEl("circle", {
+      cx: bx, cy: by, r: "7", fill: "var(--alarm)", stroke: "var(--bg-surface)", "stroke-width": "1.5",
+    });
+    const cntT = _svgEl("text", {
+      x: bx, y: by, "text-anchor": "middle", "dominant-baseline": "central",
+      class: "map-edge-count-text", fill: "var(--bg-surface)",
+    });
+    cntT.textContent = String(group.edges.length);
+    badge.appendChild(cnt);
+    badge.appendChild(cntT);
+  }
+  g.appendChild(badge);
+
+  // Hover: thicken the visible line by 1px.
+  const baseW = parseFloat(path.getAttribute("stroke-width"));
+  const enter = () => { path.setAttribute("stroke-width", String(baseW + 1)); g.classList.add("is-hover"); };
+  const leave = () => { path.setAttribute("stroke-width", String(baseW)); g.classList.remove("is-hover"); };
+  g.addEventListener("mouseenter", enter);
+  g.addEventListener("mouseleave", leave);
+
+  // Click → open drawer for this group. stopPropagation so it doesn't clear
+  // the node selection via the background handler.
+  g.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    openMapDrawer(group);
+  });
+
+  layer.appendChild(g);
+}
+
+// Build a node card <g>. Center is taken from _mapView.pos[n.artifact_id].
+function buildNodeCard(n) {
+  const c = _mapView.pos[n.artifact_id] || { x: 0, y: 0 };
+  const x = c.x - MAP_CARD_W / 2;
+  const y = c.y - MAP_CARD_H / 2;
+
+  const g = _svgEl("g", { class: "map-node", transform: `translate(${x} ${y})` });
+  g.dataset.node = n.artifact_id;
+
+  const rect = _svgEl("rect", {
+    x: 0, y: 0, width: MAP_CARD_W, height: MAP_CARD_H,
+    rx: 10, ry: 10, class: "map-node-rect",
+    fill: "var(--bg-elevated)", stroke: "var(--border-strong)", "stroke-width": "1.5",
+  });
+  g.appendChild(rect);
+
+  // Filename — truncated with ellipsis to fit the card width.
+  const fname = _svgEl("text", {
+    x: 14, y: 26, class: "map-node-filename", fill: "var(--text-primary)",
+  });
+  fname.textContent = truncateForCard(n.filename || "(unnamed)", 24);
+  const titleEl = _svgEl("title");                 // native tooltip = full filename
+  titleEl.textContent = n.filename || "";
+  g.appendChild(fname);
+  fname.appendChild(titleEl);
+
+  // Type chip.
+  const chip = _svgEl("text", {
+    x: 14, y: 44, class: "map-node-type", fill: "var(--text-muted)",
+  });
+  chip.textContent = (n.type || "").toUpperCase();
+  g.appendChild(chip);
+
+  // Severity dot row — only non-zero severities.
+  const findings = n.findings || {};
+  let dotX = 14;
+  const dotY = 68;
+  MAP_SEV_ORDER.forEach(sev => {
+    const count = findings[sev] || 0;
+    if (count <= 0) return;
+    const dot = _svgEl("circle", { cx: dotX + 4, cy: dotY, r: 4, fill: MAP_SEV_VAR[sev] });
+    g.appendChild(dot);
+    const cnt = _svgEl("text", {
+      x: dotX + 12, y: dotY + 4, class: "map-node-sevcount", fill: "var(--text-secondary)",
+    });
+    cnt.textContent = String(count);
+    g.appendChild(cnt);
+    // Advance: dot + count text width (count digits ~7px each).
+    dotX += 22 + String(count).length * 6;
+  });
+
+  // Hover: stroke → accent.
+  g.addEventListener("mouseenter", () => { if (!g.classList.contains("is-dim")) rect.setAttribute("stroke", "var(--accent)"); });
+  g.addEventListener("mouseleave", () => { if (!g.classList.contains("is-selected")) rect.setAttribute("stroke", "var(--border-strong)"); });
+
+  // Click: toggle node selection (dim everything not connected to it).
+  g.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    if (_mapView.selectedNode === n.artifact_id) {
+      clearMapNodeSelection();
+    } else {
+      selectMapNode(n.artifact_id);
+    }
+  });
+
+  return g;
+}
+
+// Truncate a filename to ~maxChars, adding an ellipsis. Cheap char-count
+// truncation (the SVG text isn't measured); the full name lives in <title>.
+function truncateForCard(s, maxChars) {
+  s = String(s);
+  return s.length > maxChars ? s.slice(0, maxChars - 1) + "…" : s;
+}
+
+// Highlight one node: full opacity for it + its neighbours/edges, dim the rest.
+function selectMapNode(nodeId) {
+  _mapView.selectedNode = nodeId;
+  const neighbours = _mapView.adj[nodeId] || new Set([nodeId]);
+
+  $$(".map-node").forEach(g => {
+    const id = g.dataset.node;
+    const on = neighbours.has(id);
+    g.classList.toggle("is-dim", !on);
+    g.classList.toggle("is-selected", id === nodeId);
+    const rect = g.querySelector(".map-node-rect");
+    if (rect) rect.setAttribute("stroke", id === nodeId ? "var(--accent)" : "var(--border-strong)");
+  });
+
+  // Edges: lit only if BOTH endpoints are the selected node or its neighbours
+  // (i.e. the edge touches the selected node).
+  $$(".map-edge").forEach(g => {
+    const s = g.dataset.source, t = g.dataset.target;
+    const touches = s === nodeId || t === nodeId;
+    g.classList.toggle("is-dim", !touches);
+  });
+}
+
+function clearMapNodeSelection() {
+  _mapView.selectedNode = null;
+  $$(".map-node").forEach(g => {
+    g.classList.remove("is-dim", "is-selected");
+    const rect = g.querySelector(".map-node-rect");
+    if (rect) rect.setAttribute("stroke", "var(--border-strong)");
+  });
+  $$(".map-edge").forEach(g => g.classList.remove("is-dim"));
+}
+
+// ── Detail drawer ──────────────────────────────────────────────────────────
+function openMapDrawer(group) {
+  const drawer = $("#mapDrawer");
+  const body = $("#mapDrawerBody");
+  const title = $("#mapDrawerTitle");
+
+  if (group.kind === "shared_controls") {
+    // (shared_controls groups don't open the drawer today, but render defensively.)
+    const ctrls = (group.edges[0] && group.edges[0].controls) || [];
+    title.textContent = `Shared controls (${ctrls.length})`;
+    body.innerHTML = `<div class="map-drawer-chips">${
+      ctrls.map(c => `<span class="map-ctrl-chip">${escapeHtml(c)}</span>`).join("")
+    }</div>`;
+  } else {
+    title.textContent = group.kind === "contradiction" ? "Contradiction" : "Resolved";
+    body.innerHTML = renderMapDrawerFindings(group);
+    wireMapDrawerInteractions(body, group);
+  }
+
+  drawer.hidden = false;
+  // Force a reflow then add .open so the transform transition runs.
+  void drawer.offsetWidth;
+  drawer.classList.add("open");
+}
+
+function closeMapDrawer() {
+  const drawer = $("#mapDrawer");
+  drawer.classList.remove("open");
+  // Hide after the slide-out transition so it doesn't catch clicks.
+  setTimeout(() => { if (!drawer.classList.contains("open")) drawer.hidden = true; }, 200);
+}
+
+// Build the HTML for a contradiction/resolved group's drawer body.
+function renderMapDrawerFindings(group) {
+  const isContra = group.kind === "contradiction";
+  const stateBadge = isContra
+    ? `<span class="map-state-badge contra">ACTIVE CONTRADICTION</span>`
+    : `<span class="map-state-badge resolved">RESOLVED</span>`;
+
+  // Collect distinct control chips across the group.
+  const ctrlSet = [];
+  group.edges.forEach(e => { if (e.control_id && !ctrlSet.includes(e.control_id)) ctrlSet.push(e.control_id); });
+  const ctrlChips = ctrlSet.map(c => `<span class="map-ctrl-chip">${escapeHtml(c)}</span>`).join("");
+
+  // Worst severity tag across the group.
+  const SEV_RANK = { critical: 4, high: 3, medium: 2, low: 1 };
+  let worst = null;
+  group.edges.forEach(e => { if (!worst || (SEV_RANK[e.severity] || 0) > (SEV_RANK[worst] || 0)) worst = e.severity; });
+  const sevTag = worst ? `<span class="map-sev-tag sev-${escapeHtml(worst)}">${escapeHtml(worst)}</span>` : "";
+
+  const header = `
+    <div class="map-drawer-toprow">
+      <div class="map-drawer-chips">${ctrlChips}</div>
+      ${stateBadge}
+      ${sevTag}
+    </div>`;
+
+  // One expandable item per finding in the group.
+  const multi = group.edges.length > 1;
+  const items = group.edges.map((e, i) => renderMapDrawerItem(e, group.kind, i, multi)).join("");
+
+  return header + `<div class="map-finding-list">${items}</div>`;
+}
+
+// A single finding row: clickable summary; expands to two stacked quote cards.
+function renderMapDrawerItem(edge, kind, idx, multi) {
+  const detail = edge.detail || {};
+  const left = detail.left || {};
+  const right = detail.right || {};
+  const edgeColorVar = kind === "contradiction" ? "var(--alarm)" : "var(--accent)";
+
+  const quoteCard = (side) => `
+    <div class="map-quote-card" style="border-left-color:${edgeColorVar}">
+      <div class="map-quote-head">${escapeHtml(side.filename || "")}${side.locator ? ` · ${escapeHtml(side.locator)}` : ""}</div>
+      <div class="map-quote-text">${escapeHtml(side.quote || "")}</div>
+    </div>`;
+
+  // Resolved note vs. contradiction action button.
+  let footer = "";
+  if (kind === "contradiction") {
+    footer = `<button class="btn-ghost btn-small map-open-gate" data-idx="${idx}">Open in Attestation Gate →</button>`;
+  } else {
+    const runChip = state.packageMap && state.packageMap.run_id
+      ? `<span class="map-run-chip">${escapeHtml(state.packageMap.run_id)}</span>` : "";
+    footer = `<div class="map-resolved-note">No longer present as of ${runChip} — resolved or rewritten.</div>`;
+  }
+
+  // First item starts expanded when there's only one; multi-item lists start collapsed.
+  const open = !multi;
+  return `
+    <div class="map-finding-item ${open ? "is-open" : ""}" data-idx="${idx}">
+      <button class="map-finding-summary" type="button">
+        <span class="map-finding-caret">▸</span>
+        <span class="map-finding-summary-text">${escapeHtml(detail.summary || "(no summary)")}</span>
+      </button>
+      <div class="map-finding-detail">
+        ${quoteCard(left)}
+        ${quoteCard(right)}
+        <div class="map-finding-footer">${footer}</div>
+      </div>
+    </div>`;
+}
+
+// Wire expand/collapse toggles + the "Open in Attestation Gate" deep links.
+function wireMapDrawerInteractions(body, group) {
+  body.querySelectorAll(".map-finding-item").forEach(item => {
+    const summary = item.querySelector(".map-finding-summary");
+    if (summary) summary.addEventListener("click", () => item.classList.toggle("is-open"));
+  });
+
+  body.querySelectorAll(".map-open-gate").forEach(btn => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const idx = parseInt(btn.dataset.idx, 10) || 0;
+      const edge = group.edges[idx];
+      if (!edge) return;
+      const leftArt = (edge.detail && edge.detail.left && edge.detail.left.artifact_id) || edge.source;
+      closeMapDrawer();
+      openGateFor(leftArt, {
+        runId: state.packageMap ? state.packageMap.run_id : null,
+        findingId: edge.finding_id,
+      });
+    });
+  });
+}
+
+// Banner overlay inside the canvas (empty / error states).
+function showMapBanner(html, isError) {
+  const b = $("#mapBanner");
+  if (!html) { b.hidden = true; b.innerHTML = ""; b.classList.remove("is-error"); return; }
+  b.innerHTML = html;
+  b.classList.toggle("is-error", !!isError);
+  b.hidden = false;
+}
+
+// ── Pan / zoom (lightweight, no library) ─────────────────────────────────────
+function applyMapTransform() {
+  $("#mapViewport").setAttribute(
+    "transform",
+    `translate(${_mapView.tx} ${_mapView.ty}) scale(${_mapView.scale})`
+  );
+}
+
+function enableMapPanZoom(svg) {
+  let dragging = false, lastX = 0, lastY = 0, moved = false;
+
+  svg.onmousedown = (e) => {
+    // Pan only when starting on empty canvas (not on a node/edge).
+    if (e.target.closest(".map-node") || e.target.closest(".map-edge")) return;
+    dragging = true; moved = false;
+    lastX = e.clientX; lastY = e.clientY;
+    svg.classList.add("is-panning");
+  };
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+    _mapView.tx += dx; _mapView.ty += dy;
+    lastX = e.clientX; lastY = e.clientY;
+    applyMapTransform();
+  });
+  window.addEventListener("mouseup", () => {
+    if (dragging) svg.classList.remove("is-panning");
+    dragging = false;
+  });
+
+  svg.onwheel = (e) => {
+    e.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;     // cursor in svg px
+    const prev = _mapView.scale;
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    const next = Math.max(0.5, Math.min(2.0, prev * factor));
+    if (next === prev) return;
+    // Zoom toward the cursor: keep the point under the cursor fixed.
+    _mapView.tx = mx - (mx - _mapView.tx) * (next / prev);
+    _mapView.ty = my - (my - _mapView.ty) * (next / prev);
+    _mapView.scale = next;
+    applyMapTransform();
+  };
+}
+
+// ── Wiring: package-detail "Map" button + the view's back button ─────────────
+$("#pkgMapBtn")?.addEventListener?.("click", () => {
+  if (!state.currentPackageId) {
+    toastInfo("No package selected", "Open a package first, then view its map.");
+    return;
+  }
+  renderPackageMap(state.currentPackageId);
+});
+
+$("#mapBackBtn")?.addEventListener?.("click", () => {
+  switchView("packages");
+  // Re-open the package detail the map was launched from.
+  if (state.currentPackageId) openPackageDetail(state.currentPackageId);
+});
+
+$("#mapDrawerClose")?.addEventListener?.("click", () => closeMapDrawer());
 
 // ─────────────────────────────────────────── Toast notifications ──
 // Lightweight non-blocking notifications. Use instead of alert() for success

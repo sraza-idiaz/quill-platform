@@ -455,6 +455,73 @@ async def list_package_versions(package_id: str, request: Request,
     return out
 
 
+@router.get("/packages/{package_id}/map")
+async def get_package_map(package_id: str, request: Request, user=Depends(get_current_user)):
+    """Phase II FR-XA-03/FR-CONT extension — package map.
+
+    Returns the visual Package Map: artifact nodes with per-artifact finding
+    severity counts and controls, plus three edge types —
+      * contradiction  — active cross-artifact inconsistency (current run)
+      * resolved       — cross-artifact inconsistency that was present in the
+                         prior run but has disappeared
+      * shared_controls — artifact pairs sharing at least one control coverage
+                          area (always emitted; frontend layers under contradictions)
+
+    If the package has no analysis runs the response is 200 with empty edges
+    and zero finding counts (NOT a 404) so the UI can still render the node
+    list before the first run.
+    """
+    from backend.services.ingest.normalizer import normalize
+    from backend.services.analysis.package_map import build_package_map
+
+    ctx = _ctx(request)
+    pkg = await ctx.repo.get_package(package_id, user["tenant"])
+    if not pkg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+
+    arts = await ctx.repo.list_artifacts_in_package(package_id, user["tenant"])
+
+    # Re-normalize each artifact to get its segments (same degrade pattern as
+    # _build_graph_for_artifacts — skip artifacts whose path is gone or fails
+    # to parse; the map degrades gracefully).
+    segments_by_artifact: dict[str, list] = {}
+    for a in arts:
+        p = await _ensure_artifact_path(ctx, a)
+        if p is None or not p.exists():
+            continue
+        try:
+            segments_by_artifact[a.id] = normalize(a.id, p)
+        except Exception:
+            continue
+
+    # Latest and previous run versions (oldest→newest; [-1] = latest).
+    versions = await ctx.repo.list_run_versions(package_id, user["tenant"])
+    run_id: str | None = None
+    prev_run_id: str | None = None
+    current_findings: list = []
+    prev_findings: list | None = None
+
+    if versions:
+        latest = versions[-1]
+        run_id = latest.run_id
+        current_findings = await ctx.repo.list_findings(latest.run_id, user["tenant"])
+        if len(versions) >= 2:
+            prev_v = versions[-2]
+            prev_run_id = prev_v.run_id
+            prev_findings = await ctx.repo.list_findings(prev_v.run_id, user["tenant"])
+
+    result = build_package_map(
+        artifacts=arts,
+        segments_by_artifact=segments_by_artifact,
+        current_findings=current_findings,
+        prev_findings=prev_findings,
+        run_id=run_id,
+        prev_run_id=prev_run_id,
+        package_id=package_id,
+    )
+    return result
+
+
 @router.get("/packages/{package_id}/diff")
 async def package_diff(package_id: str, request: Request,
                        user=Depends(get_current_user),

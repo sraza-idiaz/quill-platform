@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>QUILL — RMF Pre-Adjudication Terminal</title>
 <link rel="icon" type="image/png" href="./quill-owl.png" />
-<link rel="stylesheet" href="./styles.css?v=28" />
+<link rel="stylesheet" href="./styles.css?v=30" />
 </head>
 <body>
 
@@ -203,6 +203,7 @@
             <button class="btn-ghost btn-small" id="pkgAnalyzeBtn">↻ Analyze package</button>
             <button class="btn-ghost btn-small" id="pkgWatchBtn" title="Watch a folder for changes — auto-re-run on edit">👁 Watch folder</button>
             <button class="btn-ghost btn-small" id="pkgMapBtn" title="Cross-document relationship map">🗺 Map</button>
+            <button class="btn-ghost btn-small" id="pkgGroundingBtn" title="Visual grounding: source spans wired to regulatory text">🔗 Grounded view</button>
             <button class="btn-ghost btn-small" id="pkgExportBtn" title="Stakeholder PDF / Version-Diff / OSCAL package">⬇ Export</button>
             <button class="btn-ghost btn-small" id="pkgStatusBtn">→ Change status</button>
             <button class="btn-ghost btn-small" id="pkgCloseBtn" aria-label="close">×</button>
@@ -448,6 +449,33 @@
       </div>
     </div>
 
+    <!-- ============ VIEW 07: VISUAL GROUNDING (Phase II) ============ -->
+    <div class="view-frame" id="view-grounding">
+      <header class="view-header map-header">
+        <div class="map-header-left">
+          <button class="btn-ghost btn-small" id="groundingBackBtn" aria-label="back to packages">← Packages</button>
+          <div>
+            <h2>Visual grounding</h2>
+            <p class="view-sub" id="groundingSubtitle">—</p>
+          </div>
+        </div>
+      </header>
+
+      <div class="grounding-toolbar" id="groundingToolbar">
+        <div class="grounding-filter-chips" role="tablist" aria-label="Grounding filters">
+          <button type="button" class="filter-chip is-active" data-filter="all">All</button>
+          <button type="button" class="filter-chip" data-filter="contradictions">Contradictions only</button>
+          <button type="button" class="filter-chip" data-filter="tier2">Tier 2 only</button>
+          <button type="button" class="filter-chip" data-filter="sev-high">Severity ≥ high</button>
+        </div>
+        <span class="grounding-count-chip" id="groundingCountChip">0 of 0 shown</span>
+      </div>
+
+      <div class="grounding-body" id="groundingBody"></div>
+
+      <div class="grounding-banner" id="groundingBanner" hidden></div>
+    </div>
+
   </section>
 </main>
 
@@ -475,7 +503,7 @@
   </div>
 </div>
 
-<script src="./app.js?v=31"></script>
+<script src="./app.js?v=32"></script>
 <script>
 (function(){
   var root=document.documentElement, KEY='quill-theme';

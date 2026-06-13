@@ -23,6 +23,9 @@ const state = {
   graph: null,
   // Phase II — cross-document Package Map payload (GET /packages/{id}/map)
   packageMap: null,
+  // Phase II — Visual Grounding payload (GET /packages/{id}/grounding)
+  // { pkgId, payload, filter }
+  grounding: null,
 };
 
 // ─────────────────────────────────────────── API ──
@@ -2534,3 +2537,438 @@ async function modalPrompt({ title, subtitle, label, placeholder = "", initial =
     },
   });
 }
+
+// ═════════════════════════════════════════════════════════════
+// VISUAL GROUNDING (Phase II — defensible-evidence wires)
+// Source spans on the left wired to grounding cards on the right.
+// Reached only via the "🔗 Grounded view" button on package detail.
+// ═════════════════════════════════════════════════════════════
+
+const SEV_PRI = { critical: 0, high: 1, medium: 2, low: 3 };
+
+function _sevClass(sev) { return "sev-" + (sev || "low"); }
+
+function _passesFilter(g, filter) {
+  switch (filter) {
+    case "contradictions": return g.type === "inconsistent";
+    case "tier2":          return g.tier === "T2";
+    case "sev-high":       return g.severity === "critical" || g.severity === "high";
+    default:               return true; // "all"
+  }
+}
+
+// Whitespace-tolerant HTML wrapper around quote-matches in escaped text.
+// Returns the original text (escaped) with <span> wrappers inserted for each
+// quote that resolves; non-matching quotes are silently dropped (the card
+// still renders without a doc highlight).
+function _wrapHighlights(text, hits) {
+  // hits = [{ start, end, finding_id, severity, num }]
+  if (!hits.length) return escapeHtml(text);
+  hits.sort((a, b) => a.start - b.start);
+  // Merge overlapping ranges by stacking finding refs.
+  const merged = [];
+  for (const h of hits) {
+    const last = merged[merged.length - 1];
+    if (last && h.start < last.end) {
+      last.end = Math.max(last.end, h.end);
+      last.refs.push({ id: h.finding_id, sev: h.severity, num: h.num });
+    } else {
+      merged.push({ start: h.start, end: h.end,
+                    refs: [{ id: h.finding_id, sev: h.severity, num: h.num }] });
+    }
+  }
+  let out = "", cursor = 0;
+  for (const m of merged) {
+    out += escapeHtml(text.slice(cursor, m.start));
+    const worst = m.refs.slice().sort((a, b) =>
+      SEV_PRI[a.sev] - SEV_PRI[b.sev])[0]; // most-severe sets the bg
+    const ids = m.refs.map(r => r.id).join(",");
+    const nums = m.refs.map(r => r.num).join(",");
+    out += `<span class="ground-hl ${_sevClass(worst.sev)}" `
+         + `data-finding-ids="${escapeHtml(ids)}" data-chip-nums="${escapeHtml(nums)}">`
+         + escapeHtml(text.slice(m.start, m.end))
+         + "</span>";
+    // Chips immediately after the highlight, comma-separated when stacked.
+    for (const r of m.refs) {
+      out += `<span class="ground-chip ${_sevClass(r.sev)}" `
+           + `data-finding-id="${escapeHtml(r.id)}" `
+           + `title="finding ${escapeHtml(r.id)}">${r.num}</span>`;
+    }
+    cursor = m.end;
+  }
+  out += escapeHtml(text.slice(cursor));
+  return out;
+}
+
+function _findQuoteRange(text, quote) {
+  // Reuse the existing whitespace-tolerant helper if it exists.
+  if (typeof findQuoteInText === "function") {
+    const r = findQuoteInText(text, quote);
+    if (r) return r;
+  }
+  // Fallback: plain indexOf
+  const i = text.indexOf(quote);
+  if (i >= 0) return { start: i, end: i + quote.length };
+  return null;
+}
+
+async function renderGrounding(pkgId) {
+  if (!pkgId) return;
+  const body   = $("#groundingBody");
+  const banner = $("#groundingBanner");
+  const sub    = $("#groundingSubtitle");
+  body.innerHTML = "";
+  banner.hidden = true;
+  sub.textContent = "loading…";
+
+  let payload;
+  try {
+    payload = await api(`/packages/${pkgId}/grounding`);
+  } catch (e) {
+    toastError("Could not load grounding", e.message || String(e));
+    banner.hidden = false;
+    banner.textContent = `Could not fetch grounding data: ${e.message || e}`;
+    sub.textContent = "—";
+    return;
+  }
+
+  state.grounding = { pkgId, payload, filter: "all" };
+
+  const pkgName = state.currentPackage?.name || pkgId;
+  const runChip = payload.run_id
+    ? `<code>${escapeHtml(payload.run_id)}</code>` : `<i>no run yet</i>`;
+  sub.innerHTML = `${escapeHtml(pkgName)} · ${runChip}`;
+
+  // Empty states
+  if (!payload.run_id) {
+    banner.hidden = false;
+    banner.innerHTML = `No analysis runs yet for this package. <a href="#" id="groundingGoBack">Back to packages</a>, then click <b>↻ Analyze package</b>.`;
+    $("#groundingGoBack")?.addEventListener("click", (e) => {
+      e.preventDefault(); _closeGrounding();
+    });
+    _renderGroundingCount();
+    return;
+  }
+  if (!payload.groundings.length) {
+    banner.hidden = false;
+    banner.innerHTML = `<b>No document-anchored findings.</b> Tier 0 missing-control findings cite the catalog rather than your text, so they don't appear here. Run Tier 2 for paragraph-level groundings.`;
+    _renderGroundingCount();
+    return;
+  }
+
+  _renderGroundingPanels();
+  _renderGroundingCount();
+  // SVG wires need a layout pass first.
+  requestAnimationFrame(() => _drawAllWires());
+}
+
+function _renderGroundingPanels() {
+  const body = $("#groundingBody");
+  body.innerHTML = "";
+  const g = state.grounding;
+  if (!g) return;
+  const { payload, filter } = g;
+  const visible = payload.groundings.filter(x => _passesFilter(x, filter));
+
+  // Per-artifact numbering: each artifact's panel restarts at 1.
+  const numberByPkgPanel = new Map();   // artifact_id -> running counter
+  const assignNum = (aid) => {
+    const n = (numberByPkgPanel.get(aid) || 0) + 1;
+    numberByPkgPanel.set(aid, n);
+    return n;
+  };
+
+  // Group visible groundings by their primary's artifact_id.
+  const byArtifact = new Map();
+  for (const gr of visible) {
+    const aid = gr.primary?.artifact_id;
+    if (!aid) continue;
+    if (!byArtifact.has(aid)) byArtifact.set(aid, []);
+    byArtifact.get(aid).push(gr);
+  }
+
+  // Render artifacts that have at least one grounding under the current filter.
+  for (const art of payload.artifacts) {
+    const groundings = byArtifact.get(art.id) || [];
+    if (!groundings.length) continue;
+
+    // Hits for source highlighting (primary spans only — per panel).
+    const hits = [];
+    for (const gr of groundings) {
+      const num = assignNum(art.id);
+      gr._chipNum = num;
+      const range = gr.primary?.quote ? _findQuoteRange(art.text || "", gr.primary.quote) : null;
+      if (range) hits.push({ ...range, finding_id: gr.finding_id, severity: gr.severity, num });
+    }
+
+    const panel = document.createElement("section");
+    panel.className = "grounding-panel";
+    panel.dataset.artifactId = art.id;
+    panel.innerHTML = `
+      <div class="grounding-panel-header">
+        <span class="filename">${escapeHtml(art.filename)}</span>
+        <span class="type-pill">${escapeHtml(art.type || "")}</span>
+        <span class="count">${groundings.length} grounding${groundings.length === 1 ? "" : "s"}</span>
+      </div>
+      <div class="grounding-panel-body">
+        <div class="ground-source"></div>
+        <div class="ground-wire-gutter"><svg viewBox="0 0 60 100" preserveAspectRatio="none"></svg></div>
+        <div class="ground-cards"></div>
+      </div>`;
+
+    panel.querySelector(".ground-source").innerHTML = _wrapHighlights(art.text || "", hits);
+    const cardsEl = panel.querySelector(".ground-cards");
+    for (const gr of groundings) {
+      cardsEl.appendChild(_makeCard(gr));
+    }
+
+    body.appendChild(panel);
+
+    // Hover wiring — chips, cards, and hit-paths all toggle .ground-active on the
+    // matched elements and .is-dimming on the panel.
+    _wirePanelHover(panel);
+  }
+}
+
+function _makeCard(gr) {
+  const card = document.createElement("article");
+  card.className = `ground-card ${_sevClass(gr.severity)}`;
+  card.dataset.findingId = gr.finding_id;
+  const conflicts = (gr.conflicts_with || []).map(c =>
+    `<button class="ground-conflict-pill" data-aid="${escapeHtml(c.artifact_id)}" `
+    + `data-quote="${escapeHtml((c.quote || "").slice(0, 200))}">`
+    + `${escapeHtml(c.filename)} · ${escapeHtml(c.locator || "")}`
+    + `</button>`
+  ).join("");
+  const showGateBtn = gr.status === "unattested" && gr.primary?.artifact_id;
+  card.innerHTML = `
+    <div class="ground-card-head">
+      <span class="ground-card-num">${gr._chipNum}</span>
+      <span class="tier-badge">${escapeHtml(gr.tier || "")}</span>
+      <span style="color: var(--text-muted); font-family: var(--font-mono); font-size: 10px; font-weight: 500;">
+        ${escapeHtml(gr.severity || "")} · ${escapeHtml(gr.type || "")}
+      </span>
+    </div>
+    <div class="ground-card-title">${escapeHtml(gr.recommendation || gr.rationale || "")}</div>
+    <div class="ground-card-control">
+      <b>${escapeHtml(gr.control_id)}</b>${gr.control_title ? " · " + escapeHtml(gr.control_title) : ""}
+    </div>
+    ${gr.regulatory?.objective_summary ? `<blockquote class="ground-card-quote">${escapeHtml(gr.regulatory.objective_summary)}</blockquote>` : ""}
+    ${gr.rationale ? `<p class="ground-card-rationale"><b>Why:</b> ${escapeHtml(gr.rationale)}</p>` : ""}
+    ${conflicts ? `<div class="ground-card-conflicts">
+        <span class="ground-card-conflicts-label">Also flagged in</span>${conflicts}
+      </div>` : ""}
+    ${showGateBtn ? `<div class="ground-card-actions">
+        <button class="btn-ghost btn-small ground-open-gate" data-aid="${escapeHtml(gr.primary.artifact_id)}" data-fid="${escapeHtml(gr.finding_id)}">Open in Attestation Gate →</button>
+      </div>` : ""}`;
+
+  // Card click → scroll source pane to the highlight + pulse it.
+  card.addEventListener("click", (e) => {
+    if (e.target.closest(".ground-conflict-pill")) return;
+    if (e.target.closest(".ground-open-gate")) return;
+    const panel = card.closest(".grounding-panel");
+    const src = panel?.querySelector(".ground-source");
+    const hl = src?.querySelector(`.ground-hl[data-finding-ids*="${gr.finding_id}"]`);
+    if (hl && src) {
+      const target = hl.offsetTop - src.clientHeight / 2 + hl.offsetHeight / 2;
+      src.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+      hl.classList.add("ground-pulse");
+      setTimeout(() => hl.classList.remove("ground-pulse"), 900);
+    }
+  });
+
+  // Conflict-pill click → jump to the OTHER artifact's panel + pulse its quote.
+  card.querySelectorAll(".ground-conflict-pill").forEach((p) => {
+    p.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const otherAid = p.dataset.aid;
+      const q = p.dataset.quote;
+      const otherPanel = document.querySelector(`.grounding-panel[data-artifact-id="${CSS.escape(otherAid)}"]`);
+      if (!otherPanel) {
+        toastInfo("Other artifact not in current filter",
+                  "Switch the filter to 'All' to see all referenced documents.");
+        return;
+      }
+      otherPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      // Try to pulse a matching highlight.
+      const src = otherPanel.querySelector(".ground-source");
+      const allHls = src.querySelectorAll(".ground-hl");
+      let match = null;
+      for (const h of allHls) {
+        if (h.textContent.trim().slice(0, 40) === (q || "").trim().slice(0, 40)) { match = h; break; }
+      }
+      if (match) {
+        match.classList.add("ground-pulse");
+        setTimeout(() => match.classList.remove("ground-pulse"), 900);
+      }
+    });
+  });
+
+  // Open-in-Gate button.
+  card.querySelector(".ground-open-gate")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    const aid = btn.dataset.aid;
+    const fid = btn.dataset.fid;
+    if (typeof openGateFor === "function") {
+      openGateFor(aid, { runId: state.grounding?.payload?.run_id, findingId: fid });
+    }
+  });
+
+  return card;
+}
+
+function _wirePanelHover(panel) {
+  // Hovering a chip, card, or wire activates that grounding and dims others.
+  const activate = (findingId) => {
+    if (!findingId) return;
+    panel.classList.add("is-dimming");
+    panel.querySelectorAll(".ground-active").forEach(el => el.classList.remove("ground-active"));
+    panel.querySelectorAll(
+      `.ground-chip[data-finding-id="${CSS.escape(findingId)}"], ` +
+      `.ground-card[data-finding-id="${CSS.escape(findingId)}"], ` +
+      `.ground-hl[data-finding-ids*="${findingId}"]`
+    ).forEach(el => el.classList.add("ground-active"));
+    panel.querySelectorAll(`.ground-wire-gutter svg path[data-finding-id="${CSS.escape(findingId)}"]`)
+      .forEach(p => p.classList.add("ground-active"));
+  };
+  const clear = () => {
+    panel.classList.remove("is-dimming");
+    panel.querySelectorAll(".ground-active").forEach(el => el.classList.remove("ground-active"));
+  };
+
+  panel.addEventListener("mouseover", (e) => {
+    const chip = e.target.closest(".ground-chip");
+    const card = e.target.closest(".ground-card");
+    const hit  = e.target.closest("path.ground-hit");
+    if (chip) activate(chip.dataset.findingId);
+    else if (card) activate(card.dataset.findingId);
+    else if (hit) activate(hit.dataset.findingId);
+  });
+  panel.addEventListener("mouseleave", clear);
+
+  // Click a chip → scroll the matching card into view.
+  panel.querySelectorAll(".ground-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const fid = chip.dataset.findingId;
+      const card = panel.querySelector(`.ground-card[data-finding-id="${CSS.escape(fid)}"]`);
+      if (card) {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        card.classList.add("ground-active");
+        setTimeout(() => card.classList.remove("ground-active"), 1200);
+      }
+    });
+  });
+}
+
+function _drawAllWires() {
+  document.querySelectorAll(".grounding-panel").forEach(_drawPanelWires);
+}
+
+function _drawPanelWires(panel) {
+  const gutter = panel.querySelector(".ground-wire-gutter");
+  const svg = gutter?.querySelector("svg");
+  if (!svg) return;
+  const gutterRect = gutter.getBoundingClientRect();
+  const w = gutterRect.width || 60;
+  const h = gutterRect.height || 100;
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.innerHTML = ""; // clear
+
+  const chips = panel.querySelectorAll(".ground-chip[data-finding-id]");
+  chips.forEach((chip) => {
+    const fid = chip.dataset.findingId;
+    const card = panel.querySelector(`.ground-card[data-finding-id="${CSS.escape(fid)}"]`);
+    if (!card) return;
+    const chipRect = chip.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    // Coordinates in the SVG local space:
+    const y1 = chipRect.top  + chipRect.height / 2 - gutterRect.top;
+    const y2 = cardRect.top  + 16                   - gutterRect.top; // anchor near card top
+    const x1 = 0;
+    const x2 = w;
+    const cp1x = w * 0.5, cp1y = y1;
+    const cp2x = w * 0.5, cp2y = y2;
+    const d = `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
+    const sevColor = {
+      critical: "var(--sev-critical)",
+      high:     "var(--sev-high)",
+      medium:   "var(--sev-medium)",
+      low:      "var(--sev-low)",
+    }[chip.classList.contains("sev-critical") ? "critical"
+      : chip.classList.contains("sev-high") ? "high"
+      : chip.classList.contains("sev-medium") ? "medium" : "low"];
+    // Visible path
+    const vis = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    vis.setAttribute("d", d);
+    vis.setAttribute("stroke", sevColor);
+    vis.setAttribute("stroke-width", "1.5");
+    vis.setAttribute("fill", "none");
+    vis.dataset.findingId = fid;
+    svg.appendChild(vis);
+    // Invisible hit-path for hover
+    const hit = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    hit.setAttribute("d", d);
+    hit.setAttribute("stroke", "transparent");
+    hit.setAttribute("stroke-width", "14");
+    hit.setAttribute("fill", "none");
+    hit.setAttribute("class", "ground-hit");
+    hit.dataset.findingId = fid;
+    svg.appendChild(hit);
+  });
+}
+
+function _renderGroundingCount() {
+  const g = state.grounding;
+  const chip = $("#groundingCountChip");
+  if (!chip) return;
+  if (!g?.payload) { chip.textContent = "0 of 0 shown"; return; }
+  const total = g.payload.groundings.length;
+  const visible = g.payload.groundings.filter(x => _passesFilter(x, g.filter)).length;
+  chip.textContent = `${visible} of ${total} shown`;
+}
+
+function _closeGrounding() {
+  switchView("packages");
+  if (state.currentPackageId && typeof openPackageDetail === "function") {
+    openPackageDetail(state.currentPackageId);
+  }
+}
+
+// Wire button + filter chips + back button after DOM ready.
+(function wireGrounding() {
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("#pkgGroundingBtn");
+    if (btn) {
+      if (!state.currentPackageId) {
+        toastError("No package selected", "Open a package, then click Grounded view.");
+        return;
+      }
+      switchView("grounding");
+      renderGrounding(state.currentPackageId);
+    }
+    const back = e.target.closest("#groundingBackBtn");
+    if (back) { e.preventDefault(); _closeGrounding(); }
+    const fchip = e.target.closest(".filter-chip[data-filter]");
+    if (fchip && fchip.closest("#groundingToolbar")) {
+      $$("#groundingToolbar .filter-chip").forEach(c => c.classList.remove("is-active"));
+      fchip.classList.add("is-active");
+      if (state.grounding) {
+        state.grounding.filter = fchip.dataset.filter;
+        _renderGroundingPanels();
+        _renderGroundingCount();
+        requestAnimationFrame(() => _drawAllWires());
+      }
+    }
+  });
+  // Redraw wires on resize — they're position-dependent.
+  let resizeT;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(() => {
+      if (document.getElementById("view-grounding")?.classList.contains("active")) {
+        _drawAllWires();
+      }
+    }, 120);
+  });
+})();

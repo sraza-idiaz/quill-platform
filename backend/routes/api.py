@@ -522,6 +522,81 @@ async def get_package_map(package_id: str, request: Request, user=Depends(get_cu
     return result
 
 
+@router.get("/packages/{package_id}/grounding")
+async def get_package_grounding(
+    package_id: str, request: Request, user=Depends(get_current_user)
+):
+    """Phase II FR-XA extension — GET /packages/{id}/grounding.
+
+    Returns the Visual Grounding payload: every finding that has at least one
+    non-catalog evidence span, with its primary document span, any conflicting
+    spans, and the relevant regulatory context (800-53A objective summary).
+
+    Catalog-only findings (missing-control coverage findings whose every span
+    references ``catalog:...``) are excluded — they have no document location
+    to render.
+
+    If the package has no analysis runs the response is 200 with empty
+    groundings (NOT a 404) so the UI can render an empty-state panel before
+    the first run.
+
+    Read-only — no audit entry appended.
+    """
+    from backend.services.analysis.visual_grounding import build_grounding
+
+    ctx = _ctx(request)
+    pkg = await ctx.repo.get_package(package_id, user["tenant"])
+    if not pkg:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "package not found")
+
+    arts = await ctx.repo.list_artifacts_in_package(package_id, user["tenant"])
+
+    # Empty-run fast-path: return a well-formed empty response immediately.
+    versions = await ctx.repo.list_run_versions(package_id, user["tenant"])
+    if not versions:
+        artifact_texts: dict[str, str] = {}
+        for a in arts:
+            text = ""
+            if hasattr(ctx.repo, "get_artifact_text_async"):
+                text = await ctx.repo.get_artifact_text_async(a.id)
+            if not text:
+                text = ctx.repo.artifact_text(a.id)
+            artifact_texts[a.id] = text
+        result = build_grounding(
+            artifacts=arts,
+            artifact_texts=artifact_texts,
+            findings=[],
+            catalog=ctx.catalog,
+            run_id=None,
+        )
+        result["package_id"] = package_id
+        return result
+
+    latest = versions[-1]
+    run_id = latest.run_id
+    findings = await ctx.repo.list_findings(run_id, user["tenant"])
+
+    # Load artifact texts — async path when available (Postgres), sync fallback.
+    artifact_texts = {}
+    for a in arts:
+        text = ""
+        if hasattr(ctx.repo, "get_artifact_text_async"):
+            text = await ctx.repo.get_artifact_text_async(a.id)
+        if not text:
+            text = ctx.repo.artifact_text(a.id)
+        artifact_texts[a.id] = text
+
+    result = build_grounding(
+        artifacts=arts,
+        artifact_texts=artifact_texts,
+        findings=findings,
+        catalog=ctx.catalog,
+        run_id=run_id,
+    )
+    result["package_id"] = package_id
+    return result
+
+
 @router.get("/packages/{package_id}/diff")
 async def package_diff(package_id: str, request: Request,
                        user=Depends(get_current_user),

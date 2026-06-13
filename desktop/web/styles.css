@@ -1639,12 +1639,17 @@ textarea:focus-visible, .file-drop:focus-within, .nav-link:focus-visible,
   text-transform: uppercase; color: var(--accent); margin-bottom: 4px;
 }
 
-/* Thread strokes — calm neutral at rest, severity colour on focus */
+/* Thread strokes — at rest, a faint severity tint so the whole web is
+   legible even zoomed out; on focus the chosen thread pops and the rest dim. */
 .grounding-wires .gw-line {
-  stroke: color-mix(in srgb, var(--text-muted) 78%, transparent);
-  stroke-width: 1.25; opacity: 0.5;
+  stroke-width: 1.6; opacity: 0.7;
+  stroke: color-mix(in srgb, var(--text-muted) 70%, transparent);
 }
-.grounding-wires .gw-line.is-active { stroke-width: 2.25; opacity: 1; }
+.grounding-wires .gw-line.sev-critical { stroke: color-mix(in srgb, #ff5a3d 55%, var(--text-muted)); }
+.grounding-wires .gw-line.sev-high     { stroke: color-mix(in srgb, #d85a30 50%, var(--text-muted)); }
+.grounding-wires .gw-line.sev-medium   { stroke: color-mix(in srgb, #d99a3b 50%, var(--text-muted)); }
+.grounding-wires .gw-line.sev-low      { stroke: color-mix(in srgb, #6f8f80 50%, var(--text-muted)); }
+.grounding-wires .gw-line.is-active { stroke-width: 2.5; opacity: 1; }
 .grounding-wires .gw-line.is-active.sev-critical { stroke: #ff5a3d; }
 .grounding-wires .gw-line.is-active.sev-high     { stroke: #d85a30; }
 .grounding-wires .gw-line.is-active.sev-medium   { stroke: #d99a3b; }

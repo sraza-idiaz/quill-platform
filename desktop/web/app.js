@@ -2576,14 +2576,38 @@ function _mdInline(raw) {
   return s;
 }
 
+// Citation quotes are often a whole control section (heading + several
+// sentences). The paper renderer splits that into separate heading/paragraph
+// blocks, so the FULL quote rarely matches inside one block. Match the most
+// distinctive *sentence* of the quote instead — this lands the highlight on
+// the meaningful cadence sentence inside its paragraph.
+function _quoteNeedles(quote) {
+  const full = (quote || "").trim();
+  const needles = [];
+  if (full.length <= 180) needles.push(full);
+  // Sentences (longest first — the cadence sentence is usually long + unique).
+  const sents = full.split(/(?<=[.])\s+/).map(s => s.trim()).filter(s => s.length >= 18);
+  sents.sort((a, b) => b.length - a.length);
+  for (const s of sents) needles.push(s.length > 200 ? s.slice(0, 200) : s);
+  if (!needles.length && full) needles.push(full.slice(0, 160));
+  return needles;
+}
+
+function _findQuoteInBlock(blockText, quote) {
+  for (const needle of _quoteNeedles(quote)) {
+    const r = _looseRange(blockText, needle);
+    if (r) return r;
+  }
+  return null;
+}
+
 // Build inline HTML for a paragraph/cell, injecting <span.pp-hl> for any
-// citation quote that falls inside `raw`. quotes = [{finding_id, quote, severity}]
+// citation quote whose distinctive sentence falls inside `raw`.
 function _mdInlineWithHL(raw, quotes) {
   if (!quotes || !quotes.length) return _mdInline(raw);
-  // Find non-overlapping ranges for each quote (whitespace tolerant).
   const ranges = [];
   for (const q of quotes) {
-    const r = _looseRange(raw, q.quote);
+    const r = _findQuoteInBlock(raw, q.quote);
     if (!r) continue;
     if (ranges.some(x => r.start < x.end && r.end > x.start)) continue;
     ranges.push({ ...r, q });
@@ -2648,14 +2672,37 @@ function _parseDoc(text) {
       blocks.push({ type: "ul", items });
       continue;
     }
-    // paragraph: gather until blank
+    // PDF-extracted text has no markdown markers — detect heading-like lines
+    // (control-id headings, numbered sections, short ALL-CAPS titles) so PDF
+    // pages still render with proper document structure.
+    if (_looksLikeHeadingLine(t)) {
+      blocks.push({ type: "h", level: /^[A-Z]{2}-\d/.test(t) ? 3 : 2, text: t });
+      i++; continue;
+    }
+    // paragraph: gather until blank or a heading-like line
     const buf = [];
     while (i < lines.length && lines[i].trim() && !/^#{1,6}\s+/.test(lines[i].trim())
            && !lines[i].trim().startsWith(">") && !/^\s*[-*]\s+/.test(lines[i])
-           && !isTableRow(lines[i])) { buf.push(lines[i].trim()); i++; }
+           && !isTableRow(lines[i]) && !_looksLikeHeadingLine(lines[i].trim())) {
+      buf.push(lines[i].trim()); i++;
+    }
     blocks.push({ type: "p", text: buf.join(" ") });
   }
   return blocks;
+}
+
+// Heading detection for plain (PDF-extracted) text. Mirrors the backend's
+// PdfParser heuristics so the on-screen document structure matches what the
+// analyzer keyed off.
+function _looksLikeHeadingLine(s) {
+  if (!s || s.length > 80) return false;
+  if (/^[A-Z]{2}-\d{1,3}(\(\d+\))?(\s|$)/.test(s)) return true;          // AC-2 Account Management
+  if (/^\d+(\.\d+)*\.?\s+[A-Z]/.test(s)) return true;                    // 3.2 Account Review
+  const letters = s.replace(/[^A-Za-z]/g, "");
+  if (letters.length >= 3 && s.length <= 60
+      && letters === letters.toUpperCase()
+      && !/[.:;]$/.test(s)) return true;                                // ACCESS CONTROL
+  return false;
 }
 
 function _makePage(art, quotesForArtifact) {
@@ -2711,7 +2758,7 @@ function _makePage(art, quotesForArtifact) {
     }
     if (b.type === "p") {
       const p = document.createElement("p"); p.className = "paper-p";
-      const here = quotesForArtifact.filter(q => _looseRange(b.text, q.quote));
+      const here = quotesForArtifact.filter(q => _findQuoteInBlock(b.text, q.quote));
       p.innerHTML = _mdInlineWithHL(b.text, here);
       page.appendChild(p);
       continue;
@@ -2720,7 +2767,7 @@ function _makePage(art, quotesForArtifact) {
       const ul = document.createElement("ul"); ul.className = "paper-list";
       for (const it of b.items) {
         const li = document.createElement("li");
-        const here = quotesForArtifact.filter(q => _looseRange(it, q.quote));
+        const here = quotesForArtifact.filter(q => _findQuoteInBlock(it, q.quote));
         li.innerHTML = _mdInlineWithHL(it, here);
         ul.appendChild(li);
       }
@@ -2743,7 +2790,7 @@ function _makePage(art, quotesForArtifact) {
         const tr = document.createElement("tr");
         for (const c of r) {
           const td = document.createElement("td");
-          const here = quotesForArtifact.filter(q => _looseRange(c, q.quote));
+          const here = quotesForArtifact.filter(q => _findQuoteInBlock(c, q.quote));
           td.innerHTML = _mdInlineWithHL(c, here);
           tr.appendChild(td);
         }
@@ -2827,8 +2874,11 @@ async function renderGrounding(pkgId) {
     g.conflicts_with.forEach(c => push(c.artifact_id, c.quote));
   }
 
-  // Lay pages in a row. Top band leaves room for thread lanes.
-  const band = _LANE_TOP_PAD + threads.length * _LANE_GAP + 30;
+  // Lay pages in a row. Top band leaves room for one lane PER WIRE (a 3-way
+  // contradiction draws two wires from the primary, so count conflicts).
+  const totalWires = threads.reduce((n, t) =>
+    n + (t.conflicts_with || []).filter(c => c.artifact_id !== t.primary.artifact_id).length, 0);
+  const band = _LANE_TOP_PAD + Math.max(threads.length, totalWires) * _LANE_GAP + 30;
   const pageEls = new Map();
   let x = _PAGE_X0;
   for (const art of pages) {
@@ -2895,74 +2945,68 @@ function _drawThreads() {
   wires.setAttribute("width", maxX + 140);
   wires.setAttribute("height", maxY + 60);
 
+  let laneIdx = 0;   // global — one horizontal lane per wire, never shared
   g.threads.forEach((thread) => {
     const srcPage = pageEls.get(thread.primary.artifact_id);
     if (!srcPage) return;
-    const conflict = thread.conflicts_with.find(c => pageEls.get(c.artifact_id) && c.artifact_id !== thread.primary.artifact_id);
-    if (!conflict) return;
-    const dstPage = pageEls.get(conflict.artifact_id);
-
-    const srcLeft = parseInt(srcPage.style.left, 10) || 0;
-    const dstLeft = parseInt(dstPage.style.left, 10) || 0;
-    const srcIsLeft = srcLeft < dstLeft;
-
-    const a = _citAnchor(srcPage, thread.finding_id, srcIsLeft);    // exit toward peer
-    const b = _citAnchor(dstPage, thread.finding_id, !srcIsLeft);
-    if (!a || !b) return;
-
-    // Gutter riser x-positions (just outside each page on the side facing peer).
-    const laneY = band - 26 - thread._idx * _LANE_GAP;
-    const off = (thread._idx % 4) * 6;
-    const srcGut = srcIsLeft ? (srcLeft + _PAGE_W + 30 + off) : (srcLeft - 30 - off);
-    const dstGut = srcIsLeft ? (dstLeft - 30 - off)           : (dstLeft + _PAGE_W + 30 + off);
-
-    const pts = [
-      { x: a.x, y: a.y },
-      { x: srcGut, y: a.y },
-      { x: srcGut, y: laneY },
-      { x: dstGut, y: laneY },
-      { x: dstGut, y: b.y },
-      { x: b.x, y: b.y },
-    ];
-    const d = _ortho(pts, 7);
     const sev = _gSev(thread);
+    // Draw a wire to EACH conflicting document (3-way contradictions yield
+    // two wires from the primary). Every conflict here genuinely differs from
+    // the primary — the generator guarantees 3-way controls use three
+    // distinct frequencies.
+    const peers = (thread.conflicts_with || [])
+      .filter(c => pageEls.get(c.artifact_id) && c.artifact_id !== thread.primary.artifact_id);
+    peers.forEach((conflict) => {
+      const dstPage = pageEls.get(conflict.artifact_id);
+      const srcLeft = parseInt(srcPage.style.left, 10) || 0;
+      const dstLeft = parseInt(dstPage.style.left, 10) || 0;
+      const srcIsLeft = srcLeft < dstLeft;
 
-    const line = _svg("path", { d, class: `gw-line sev-${sev}`, "data-fid": thread.finding_id });
-    wires.appendChild(line);
-    const hit = _svg("path", { d, class: "gw-hit", "data-fid": thread.finding_id });
-    wires.appendChild(hit);
+      const a = _citAnchor(srcPage, thread.finding_id, srcIsLeft);
+      const b = _citAnchor(dstPage, thread.finding_id, !srcIsLeft);
+      if (!a || !b) return;
 
-    // Anchor dots at both citations.
-    [a, b].forEach(pt => {
-      const dot = _svg("circle", { cx: pt.x, cy: pt.y, r: 3.2, class: `gw-dot sev-${sev}`, "data-fid": thread.finding_id });
-      wires.appendChild(dot);
+      const laneY = band - 26 - laneIdx * _LANE_GAP;
+      const off = (laneIdx % 5) * 6;
+      laneIdx += 1;
+      const srcGut = srcIsLeft ? (srcLeft + _PAGE_W + 30 + off) : (srcLeft - 30 - off);
+      const dstGut = srcIsLeft ? (dstLeft - 30 - off)           : (dstLeft + _PAGE_W + 30 + off);
+
+      const pts = [
+        { x: a.x, y: a.y }, { x: srcGut, y: a.y }, { x: srcGut, y: laneY },
+        { x: dstGut, y: laneY }, { x: dstGut, y: b.y }, { x: b.x, y: b.y },
+      ];
+      const d = _ortho(pts, 7);
+
+      const line = _svg("path", { d, class: `gw-line sev-${sev}`, "data-fid": thread.finding_id });
+      wires.appendChild(line);
+      const hit = _svg("path", { d, class: "gw-hit", "data-fid": thread.finding_id });
+      wires.appendChild(hit);
+      [a, b].forEach(pt => wires.appendChild(
+        _svg("circle", { cx: pt.x, cy: pt.y, r: 3.2, class: `gw-dot sev-${sev}`, "data-fid": thread.finding_id })));
+
+      // Label pill at this wire's lane midpoint.
+      const midX = (srcGut + dstGut) / 2;
+      const labelText = thread.control_id || "";
+      const pillW = 18 + labelText.length * 6.4;
+      const grp = _svg("g", { class: "gw-label", "data-fid": thread.finding_id });
+      grp.appendChild(_svg("rect", { x: midX - pillW / 2, y: laneY - 10, width: pillW, height: 20, rx: 10,
+                                     fill: "var(--bg-surface)", stroke: "var(--border)", "stroke-width": 1 }));
+      grp.appendChild(_svg("circle", { cx: midX - pillW / 2 + 9, cy: laneY, r: 3, class: `gw-dot sev-${sev}` }));
+      const tx = _svg("text", { x: midX + 4, y: laneY, fill: "var(--text-secondary)" });
+      tx.textContent = labelText;
+      grp.appendChild(tx);
+      wires.appendChild(grp);
+
+      const onEnter = () => _hoverThread(thread.finding_id, true);
+      const onLeave = () => _hoverThread(thread.finding_id, false);
+      const onClick = (e) => { e.stopPropagation(); _selectThread(thread.finding_id); };
+      [hit, grp, a.el, b.el].forEach(el => {
+        el.addEventListener("mouseenter", onEnter);
+        el.addEventListener("mouseleave", onLeave);
+        el.addEventListener("click", onClick);
+      });
     });
-
-    // Label pill at lane midpoint.
-    const midX = (srcGut + dstGut) / 2;
-    const labelText = thread.control_id || "";
-    const pillW = 18 + labelText.length * 6.4;
-    const grp = _svg("g", { class: "gw-label", "data-fid": thread.finding_id });
-    grp.appendChild(_svg("rect", { x: midX - pillW / 2, y: laneY - 10, width: pillW, height: 20, rx: 10,
-                                   fill: "var(--bg-surface)", stroke: "var(--border)", "stroke-width": 1 }));
-    grp.appendChild(_svg("circle", { cx: midX - pillW / 2 + 9, cy: laneY, r: 3, class: `gw-dot sev-${sev}` }));
-    const tx = _svg("text", { x: midX + 4, y: laneY, fill: "var(--text-secondary)" });
-    tx.textContent = labelText;
-    grp.appendChild(tx);
-    wires.appendChild(grp);
-
-    const onEnter = () => _hoverThread(thread.finding_id, true);
-    const onLeave = () => _hoverThread(thread.finding_id, false);
-    const onClick = (e) => { e.stopPropagation(); _selectThread(thread.finding_id); };
-    [hit, grp].forEach(el => {
-      el.addEventListener("mouseenter", onEnter);
-      el.addEventListener("mouseleave", onLeave);
-      el.addEventListener("click", onClick);
-    });
-    a.el.addEventListener("click", onClick);
-    b.el.addEventListener("click", onClick);
-    a.el.addEventListener("mouseenter", onEnter); a.el.addEventListener("mouseleave", onLeave);
-    b.el.addEventListener("mouseenter", onEnter); b.el.addEventListener("mouseleave", onLeave);
   });
 }
 

@@ -42,6 +42,67 @@ import re as _re
 # blocks per section.
 _HEADING_LINE_RE = _re.compile(r"\n(?=#{1,6}\s)")
 
+# Heading detection for PDF-extracted text (no markdown markers survive PDF
+# extraction). A line is treated as a section boundary when it looks like a
+# control heading ("AC-2 Account Management"), a numbered section ("3.2
+# Account Review"), or a short ALL-CAPS title ("ACCESS CONTROL").
+_PDF_CTRL_HEAD_RE = _re.compile(r"^[A-Z]{2}-\d{1,3}(?:\(\d+\))?(?:\s|$)")
+_PDF_NUM_HEAD_RE  = _re.compile(r"^\d+(?:\.\d+)*\.?\s+[A-Z]")
+
+
+def _pdf_is_heading(line: str) -> bool:
+    s = line.strip()
+    if not s or len(s) > 80:
+        return False
+    if _PDF_CTRL_HEAD_RE.match(s):
+        return True
+    if _PDF_NUM_HEAD_RE.match(s):
+        return True
+    # Short ALL-CAPS title (letters mostly uppercase, no sentence punctuation).
+    letters = [c for c in s if c.isalpha()]
+    if letters and len(s) <= 60 and sum(c.isupper() for c in letters) / len(letters) > 0.85 \
+       and not s.endswith((".", ":", ";")):
+        return True
+    return False
+
+
+def _pdf_page_blocks(text: str) -> list[tuple[str, int]]:
+    """Split one PDF page's extracted text into (block_text, rel_start) pairs.
+
+    A new block starts at every heading-like line (so each control section is
+    its own block) and after blank lines. rel_start is the character offset of
+    the block within `text` (best-effort, for source locators)."""
+    lines = text.split("\n")
+    out: list[tuple[str, int]] = []
+    cur: list[str] = []
+    cur_start = 0
+    pos = 0
+
+    def flush():
+        nonlocal cur
+        if cur:
+            chunk = "\n".join(cur).strip()
+            if chunk:
+                out.append((chunk, cur_start))
+        cur = []
+
+    for ln in lines:
+        line_len = len(ln) + 1  # + newline
+        stripped = ln.strip()
+        if not stripped:
+            flush()
+            pos += line_len
+            continue
+        if _pdf_is_heading(ln) and cur:
+            flush()
+            cur_start = pos
+        if not cur:
+            cur_start = pos
+        cur.append(ln)
+        pos += line_len
+    flush()
+    return out if out else [(text.strip(), 0)]
+
 
 # --------------------------------------------------------------------------- #
 def _blocks_from_lines(text: str, label: str) -> list[TextBlock]:
@@ -150,11 +211,22 @@ class PdfParser:
         offset = 0
         for page_no, page in enumerate(reader.pages, start=1):
             text = (page.extract_text() or "").strip()
-            if text:
+            if not text:
+                continue
+            # CRITICAL: do NOT emit one block per page. The cross-artifact
+            # consistency check keys every segment by control_hint, which the
+            # normalizer derives from the START of each block. A whole-page
+            # block would tag the entire page with the first control id it
+            # sees, collapsing per-control attribution. Split each page into
+            # per-section blocks at heading boundaries (control-id lines,
+            # numbered/ALL-CAPS section titles) so each control's narrative
+            # is its own block and gets its own hint.
+            for sub_text, rel_start in _pdf_page_blocks(text):
+                start = offset + rel_start
                 blocks.append(
-                    TextBlock(text=text, locator=f"p{page_no}", char_start=offset, char_end=offset + len(text))
-                )
-                offset += len(text)
+                    TextBlock(text=sub_text, locator=f"p{page_no}",
+                              char_start=start, char_end=start + len(sub_text)))
+            offset += len(text)
         if not blocks:
             raise ParseError(f"No extractable text in {path.name}")
         return blocks

@@ -431,6 +431,15 @@ class PostgresRepository:
                                               tier, status, needs_review, created_at)
                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
                                 $11::jsonb,$12::jsonb,$13,$14,$15,$16)
+                        ON CONFLICT (tenant, id) DO UPDATE SET
+                          run_id=EXCLUDED.run_id, control_id=EXCLUDED.control_id,
+                          objective_id=EXCLUDED.objective_id, type=EXCLUDED.type,
+                          severity=EXCLUDED.severity, confidence=EXCLUDED.confidence,
+                          recommendation=EXCLUDED.recommendation, rationale=EXCLUDED.rationale,
+                          missing_elements=EXCLUDED.missing_elements,
+                          evidence_spans=EXCLUDED.evidence_spans, tier=EXCLUDED.tier,
+                          status=EXCLUDED.status, needs_review=EXCLUDED.needs_review,
+                          created_at=EXCLUDED.created_at
                         """,
                         [
                             (

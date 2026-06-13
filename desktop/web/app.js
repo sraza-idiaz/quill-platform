@@ -2538,36 +2538,32 @@ async function modalPrompt({ title, subtitle, label, placeholder = "", initial =
   });
 }
 
+
 // ═════════════════════════════════════════════════════════════
-// VISUAL GROUNDING v3 — threaded document canvas
+// VISUAL GROUNDING v4 — paginated A4 document canvas
 //
-// Each artifact renders as a real paper page (hand-rolled markdown
-// renderer — no CDN dep, preserves QUILL's air-gap guarantee).
-// Cross-document contradictions are drawn as orthogonal "threads"
-// that anchor AT the citation (top-near edge), exit through the
-// inter-page gutter, run along a dedicated lane above the pages,
-// and drop into the peer citation. Calm neutral at rest; the
-// focused thread lights up in its severity colour while the rest
-// dim. Pan + cursor-anchored zoom.
+// Each document is a COLUMN of A4 sheets (real Letter proportions,
+// content block-paginated so a long doc reads as several pages — not
+// one banner). Cross-document contradictions draw orthogonal threads
+// anchored at the citation, routed through inter-column gutters into a
+// lane band above the pages. Pan is rAF-throttled and the viewport is
+// only layer-promoted during interaction (fixes black/half-render jank).
 // ═════════════════════════════════════════════════════════════
 
-const _PAGE_W   = 560;
-const _PAGE_GAP = 150;       // gutter between pages — room for risers
-const _PAGE_X0  = 90;
-const _LANE_GAP = 24;        // vertical spacing between thread lanes
-const _LANE_TOP_PAD = 46;    // gap between top-most lane and the page tops
+const _COL_W   = 612;          // A4/Letter sheet width
+const _SHEET_H = 792;          // Letter height (8.5x11 @ 72dpi)
+const _SHEET_PACK = 636;       // usable body height before a new sheet
+const _COL_GAP = 150;
+const _COL_X0  = 90;
+const _LANE_GAP = 24;
+const _LANE_TOP_PAD = 46;
+const _SVGNS = "http://www.w3.org/2000/svg";
 
 function _gSev(g) { return g.severity || "low"; }
-const _SVGNS = "http://www.w3.org/2000/svg";
-function _svg(tag, attrs) {
-  const el = document.createElementNS(_SVGNS, tag);
-  for (const k in attrs) el.setAttribute(k, attrs[k]);
-  return el;
-}
+function _svg(tag, attrs) { const el = document.createElementNS(_SVGNS, tag); for (const k in attrs) el.setAttribute(k, attrs[k]); return el; }
 
-// ── Markdown → DOM ───────────────────────────────────────────── //
-const _CTRL_RE = /^([A-Z]{2}-\d+(?:\(\d+\))?)\s+(.+)$/;
-
+// ── markdown helpers ─────────────────────────────────────────── //
+const _CTRL_RE = /^([A-Z]{2}-\d{1,3}(?:\(\d+\))?)\s+(.+)$/;
 function _mdInline(raw) {
   let s = escapeHtml(raw);
   s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
@@ -2575,34 +2571,29 @@ function _mdInline(raw) {
   s = s.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>");
   return s;
 }
-
-// Citation quotes are often a whole control section (heading + several
-// sentences). The paper renderer splits that into separate heading/paragraph
-// blocks, so the FULL quote rarely matches inside one block. Match the most
-// distinctive *sentence* of the quote instead — this lands the highlight on
-// the meaningful cadence sentence inside its paragraph.
-function _quoteNeedles(quote) {
-  const full = (quote || "").trim();
-  const needles = [];
-  if (full.length <= 180) needles.push(full);
-  // Sentences (longest first — the cadence sentence is usually long + unique).
-  const sents = full.split(/(?<=[.])\s+/).map(s => s.trim()).filter(s => s.length >= 18);
-  sents.sort((a, b) => b.length - a.length);
-  for (const s of sents) needles.push(s.length > 200 ? s.slice(0, 200) : s);
-  if (!needles.length && full) needles.push(full.slice(0, 160));
-  return needles;
-}
-
-function _findQuoteInBlock(blockText, quote) {
-  for (const needle of _quoteNeedles(quote)) {
-    const r = _looseRange(blockText, needle);
-    if (r) return r;
-  }
+function _looseRange(hay, needle) {
+  if (!needle) return null;
+  const i = hay.indexOf(needle);
+  if (i >= 0) return { start: i, end: i + needle.length };
+  const toks = needle.trim().split(/\s+/).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!toks.length) return null;
+  try { const m = new RegExp(toks.join("\\s+")).exec(hay); if (m) return { start: m.index, end: m.index + m[0].length }; } catch (_) {}
   return null;
 }
-
-// Build inline HTML for a paragraph/cell, injecting <span.pp-hl> for any
-// citation quote whose distinctive sentence falls inside `raw`.
+function _quoteNeedles(quote) {
+  const full = (quote || "").trim();
+  const out = [];
+  if (full.length <= 180) out.push(full);
+  const sents = full.split(/(?<=[.])\s+/).map(s => s.trim()).filter(s => s.length >= 18);
+  sents.sort((a, b) => b.length - a.length);
+  for (const s of sents) out.push(s.length > 200 ? s.slice(0, 200) : s);
+  if (!out.length && full) out.push(full.slice(0, 160));
+  return out;
+}
+function _findQuoteInBlock(blockText, quote) {
+  for (const n of _quoteNeedles(quote)) { const r = _looseRange(blockText, n); if (r) return r; }
+  return null;
+}
 function _mdInlineWithHL(raw, quotes) {
   if (!quotes || !quotes.length) return _mdInline(raw);
   const ranges = [];
@@ -2624,437 +2615,276 @@ function _mdInlineWithHL(raw, quotes) {
   if (cur < raw.length) out += _mdInline(raw.slice(cur));
   return out;
 }
-
-function _looseRange(hay, needle) {
-  if (!needle) return null;
-  const i = hay.indexOf(needle);
-  if (i >= 0) return { start: i, end: i + needle.length };
-  const toks = needle.trim().split(/\s+/).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  if (!toks.length) return null;
-  try {
-    const m = new RegExp(toks.join("\\s+")).exec(hay);
-    if (m) return { start: m.index, end: m.index + m[0].length };
-  } catch (_) {}
-  return null;
+function _looksLikeHeadingLine(s) {
+  if (!s || s.length > 80) return false;
+  if (/^[A-Z]{2}-\d{1,3}(\(\d+\))?(\s|$)/.test(s)) return true;
+  if (/^\d+(\.\d+)*\.?\s+[A-Z]/.test(s)) return true;
+  const letters = s.replace(/[^A-Za-z]/g, "");
+  if (letters.length >= 3 && s.length <= 60 && letters === letters.toUpperCase() && !/[.:;]$/.test(s)) return true;
+  return false;
 }
-
 function _parseDoc(text) {
   const lines = (text || "").split("\n");
-  const blocks = [];
-  let i = 0;
+  const blocks = []; let i = 0;
   const isTableRow = (l) => /^\s*\|.*\|\s*$/.test(l);
   while (i < lines.length) {
-    const line = lines[i].replace(/\r$/, "");
-    const t = line.trim();
+    const line = lines[i].replace(/\r$/, ""); const t = line.trim();
     if (!t) { i++; continue; }
-    if (/^#{1,6}\s+/.test(t)) {
-      const m = t.match(/^(#{1,6})\s+(.*)$/);
-      blocks.push({ type: "h", level: m[1].length, text: m[2].trim() });
-      i++; continue;
-    }
-    if (/^[-*]\s+$/.test(t) || /^---+$/.test(t)) { blocks.push({ type: "hr" }); i++; continue; }
-    if (t.startsWith("> ")) {
-      const buf = [];
-      while (i < lines.length && lines[i].trim().startsWith(">")) { buf.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
-      blocks.push({ type: "quote", text: buf.join(" ").trim() });
-      continue;
-    }
+    if (/^#{1,6}\s+/.test(t)) { const m = t.match(/^(#{1,6})\s+(.*)$/); blocks.push({ type: "h", level: m[1].length, text: m[2].trim() }); i++; continue; }
+    if (/^---+$/.test(t)) { blocks.push({ type: "hr" }); i++; continue; }
+    if (t.startsWith("> ")) { const buf = []; while (i < lines.length && lines[i].trim().startsWith(">")) { buf.push(lines[i].replace(/^\s*>\s?/, "")); i++; } blocks.push({ type: "quote", text: buf.join(" ").trim() }); continue; }
     if (isTableRow(line) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
-      const rows = [];
-      while (i < lines.length && isTableRow(lines[i])) { rows.push(lines[i]); i++; }
+      const rows = []; while (i < lines.length && isTableRow(lines[i])) { rows.push(lines[i]); i++; }
       const cells = (r) => r.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
-      blocks.push({ type: "table", header: cells(rows[0]), rows: rows.slice(2).map(cells) });
-      continue;
+      blocks.push({ type: "table", header: cells(rows[0]), rows: rows.slice(2).map(cells) }); continue;
     }
-    if (/^[-*]\s+/.test(t)) {
-      const items = [];
-      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*[-*]\s+/, "").trim()); i++; }
-      blocks.push({ type: "ul", items });
-      continue;
-    }
-    // PDF-extracted text has no markdown markers — detect heading-like lines
-    // (control-id headings, numbered sections, short ALL-CAPS titles) so PDF
-    // pages still render with proper document structure.
-    if (_looksLikeHeadingLine(t)) {
-      blocks.push({ type: "h", level: /^[A-Z]{2}-\d/.test(t) ? 3 : 2, text: t });
-      i++; continue;
-    }
-    // paragraph: gather until blank or a heading-like line
+    if (/^[-*]\s+/.test(t)) { const items = []; while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*[-*]\s+/, "").trim()); i++; } blocks.push({ type: "ul", items }); continue; }
+    if (_looksLikeHeadingLine(t)) { blocks.push({ type: "h", level: /^[A-Z]{2}-\d/.test(t) ? 3 : 2, text: t }); i++; continue; }
     const buf = [];
     while (i < lines.length && lines[i].trim() && !/^#{1,6}\s+/.test(lines[i].trim())
            && !lines[i].trim().startsWith(">") && !/^\s*[-*]\s+/.test(lines[i])
-           && !isTableRow(lines[i]) && !_looksLikeHeadingLine(lines[i].trim())) {
-      buf.push(lines[i].trim()); i++;
-    }
+           && !isTableRow(lines[i]) && !_looksLikeHeadingLine(lines[i].trim())) { buf.push(lines[i].trim()); i++; }
     blocks.push({ type: "p", text: buf.join(" ") });
   }
   return blocks;
 }
 
-// Heading detection for plain (PDF-extracted) text. Mirrors the backend's
-// PdfParser heuristics so the on-screen document structure matches what the
-// analyzer keyed off.
-function _looksLikeHeadingLine(s) {
-  if (!s || s.length > 80) return false;
-  if (/^[A-Z]{2}-\d{1,3}(\(\d+\))?(\s|$)/.test(s)) return true;          // AC-2 Account Management
-  if (/^\d+(\.\d+)*\.?\s+[A-Z]/.test(s)) return true;                    // 3.2 Account Review
-  const letters = s.replace(/[^A-Za-z]/g, "");
-  if (letters.length >= 3 && s.length <= 60
-      && letters === letters.toUpperCase()
-      && !/[.:;]$/.test(s)) return true;                                // ACCESS CONTROL
-  return false;
-}
-
-function _makePage(art, quotesForArtifact) {
-  const page = document.createElement("article");
-  page.className = "paper-page";
-  page.dataset.artifactId = art.id;
-
-  const tab = document.createElement("div");
-  tab.className = "paper-tab";
-  tab.innerHTML = `<span class="tab-dot"></span>${escapeHtml(art.filename)}`;
-  page.appendChild(tab);
-
+// ── block elements + A4 pagination ───────────────────────────── //
+function _buildBlockEls(art, quotes) {
   const blocks = _parseDoc(art.text || "");
+  const els = [];
   let titleDone = false;
   for (let bi = 0; bi < blocks.length; bi++) {
     const b = blocks[bi];
-    // First top-level heading → document title (+ optional meta paragraph + rule)
     if (!titleDone && b.type === "h" && b.level === 1) {
-      const h = document.createElement("div");
-      h.className = "paper-doc-title";
-      h.textContent = b.text;
-      page.appendChild(h);
+      const h = document.createElement("div"); h.className = "paper-doc-title"; h.textContent = b.text; els.push(h);
       const nxt = blocks[bi + 1];
       if (nxt && nxt.type === "p" && nxt.text.startsWith("**")) {
-        const meta = document.createElement("div");
-        meta.className = "paper-doc-meta";
-        meta.textContent = nxt.text.replace(/\*\*/g, "").replace(/\s+/g, " ");
-        page.appendChild(meta);
-        bi++;
+        const m = document.createElement("div"); m.className = "paper-doc-meta"; m.textContent = nxt.text.replace(/\*\*/g, "").replace(/\s+/g, " "); els.push(m); bi++;
       }
-      const rule = document.createElement("div");
-      rule.className = "paper-rule";
-      page.appendChild(rule);
-      titleDone = true;
-      continue;
+      const r = document.createElement("div"); r.className = "paper-rule"; els.push(r); titleDone = true; continue;
     }
     if (b.type === "h") {
       const ctrl = b.text.match(_CTRL_RE);
-      if (ctrl) {
-        const row = document.createElement("div");
-        row.className = "paper-control";
-        row.innerHTML = `<span class="ctrl-id">${escapeHtml(ctrl[1])}</span>`
-                      + `<span class="ctrl-name">${escapeHtml(ctrl[2])}</span>`;
-        page.appendChild(row);
-      } else if (b.level <= 2) {
-        const h = document.createElement("h2"); h.className = "paper-h2"; h.textContent = b.text;
-        page.appendChild(h);
-      } else {
-        const h = document.createElement("h3"); h.className = "paper-h3"; h.textContent = b.text;
-        page.appendChild(h);
-      }
+      if (ctrl) { const row = document.createElement("div"); row.className = "paper-control";
+        row.innerHTML = `<span class="ctrl-id">${escapeHtml(ctrl[1])}</span><span class="ctrl-name">${escapeHtml(ctrl[2])}</span>`; els.push(row); }
+      else if (b.level <= 2) { const h = document.createElement("h2"); h.className = "paper-h2"; h.textContent = b.text; els.push(h); }
+      else { const h = document.createElement("h3"); h.className = "paper-h3"; h.textContent = b.text; els.push(h); }
       continue;
     }
-    if (b.type === "p") {
-      const p = document.createElement("p"); p.className = "paper-p";
-      const here = quotesForArtifact.filter(q => _findQuoteInBlock(b.text, q.quote));
-      p.innerHTML = _mdInlineWithHL(b.text, here);
-      page.appendChild(p);
-      continue;
-    }
-    if (b.type === "ul") {
-      const ul = document.createElement("ul"); ul.className = "paper-list";
-      for (const it of b.items) {
-        const li = document.createElement("li");
-        const here = quotesForArtifact.filter(q => _findQuoteInBlock(it, q.quote));
-        li.innerHTML = _mdInlineWithHL(it, here);
-        ul.appendChild(li);
-      }
-      page.appendChild(ul);
-      continue;
-    }
-    if (b.type === "quote") {
-      const bq = document.createElement("blockquote"); bq.className = "paper-quote";
-      bq.innerHTML = _mdInline(b.text);
-      page.appendChild(bq);
-      continue;
-    }
-    if (b.type === "table") {
-      const tbl = document.createElement("table"); tbl.className = "paper-table";
+    if (b.type === "p") { const p = document.createElement("p"); p.className = "paper-p";
+      const here = quotes.filter(q => _findQuoteInBlock(b.text, q.quote)); p.innerHTML = _mdInlineWithHL(b.text, here); els.push(p); continue; }
+    if (b.type === "ul") { const ul = document.createElement("ul"); ul.className = "paper-list";
+      for (const it of b.items) { const li = document.createElement("li"); const here = quotes.filter(q => _findQuoteInBlock(it, q.quote)); li.innerHTML = _mdInlineWithHL(it, here); ul.appendChild(li); } els.push(ul); continue; }
+    if (b.type === "quote") { const bq = document.createElement("blockquote"); bq.className = "paper-quote"; bq.innerHTML = _mdInline(b.text); els.push(bq); continue; }
+    if (b.type === "table") { const tbl = document.createElement("table"); tbl.className = "paper-table";
       const thead = document.createElement("thead"); const htr = document.createElement("tr");
       for (const c of b.header) { const th = document.createElement("th"); th.innerHTML = _mdInline(c); htr.appendChild(th); }
       thead.appendChild(htr); tbl.appendChild(thead);
       const tb = document.createElement("tbody");
-      for (const r of b.rows) {
-        const tr = document.createElement("tr");
-        for (const c of r) {
-          const td = document.createElement("td");
-          const here = quotesForArtifact.filter(q => _findQuoteInBlock(c, q.quote));
-          td.innerHTML = _mdInlineWithHL(c, here);
-          tr.appendChild(td);
-        }
-        tb.appendChild(tr);
-      }
-      tbl.appendChild(tb); page.appendChild(tbl);
-      continue;
-    }
-    if (b.type === "hr") { const r = document.createElement("div"); r.className = "paper-rule"; page.appendChild(r); }
+      for (const r of b.rows) { const tr = document.createElement("tr");
+        for (const c of r) { const td = document.createElement("td"); const here = quotes.filter(q => _findQuoteInBlock(c, q.quote)); td.innerHTML = _mdInlineWithHL(c, here); tr.appendChild(td); } tb.appendChild(tr); }
+      tbl.appendChild(tb); els.push(tbl); continue; }
+    if (b.type === "hr") { const r = document.createElement("div"); r.className = "paper-rule"; els.push(r); }
   }
-
-  const foot = document.createElement("div");
-  foot.className = "paper-foot";
-  foot.textContent = escapeHtml(art.filename);
-  page.appendChild(foot);
-  return page;
+  return els;
 }
 
-// ── Main entry ───────────────────────────────────────────────── //
+function _makeDocColumn(art, quotes, viewport, leftX, topY) {
+  const col = document.createElement("div");
+  col.className = "paper-doc-col"; col.dataset.artifactId = art.id;
+  col.style.left = leftX + "px"; col.style.top = topY + "px"; col.style.width = _COL_W + "px";
+  const tab = document.createElement("div"); tab.className = "paper-col-tab";
+  tab.innerHTML = `<span class="tab-dot"></span>${escapeHtml(art.filename)}`;
+  col.appendChild(tab);
+  viewport.appendChild(col);          // attach so we can measure during packing
+
+  let sheetN = 0;
+  const newSheetBody = () => {
+    const s = document.createElement("div"); s.className = "paper-sheet";
+    const body = document.createElement("div"); body.className = "paper-sheet-body"; s.appendChild(body);
+    const foot = document.createElement("div"); foot.className = "paper-foot";
+    foot.textContent = `${art.filename}  ·  sheet ${++sheetN}`; s.appendChild(foot);
+    col.appendChild(s); return body;
+  };
+
+  const els = _buildBlockEls(art, quotes);
+  let body = newSheetBody();
+  for (const el of els) {
+    body.appendChild(el);
+    if (body.scrollHeight > _SHEET_PACK && body.childElementCount > 1) {
+      body.removeChild(el); body = newSheetBody(); body.appendChild(el);
+    }
+  }
+  return col;
+}
+
+// ── main entry ───────────────────────────────────────────────── //
 async function renderGrounding(pkgId) {
   if (!pkgId) return;
-  const viewport = $("#groundingViewport");
-  const wires    = $("#groundingWires");
-  const banner   = $("#groundingBanner");
-  const sub      = $("#groundingSubtitle");
-  const info     = $("#groundingInfoCard");
-  viewport.querySelectorAll(".paper-page").forEach(n => n.remove());
-  wires.innerHTML = "";
-  banner.hidden = true; info.hidden = true;
-  sub.textContent = "loading…";
+  const viewport = $("#groundingViewport"), wires = $("#groundingWires");
+  const banner = $("#groundingBanner"), sub = $("#groundingSubtitle"), info = $("#groundingInfoCard");
+  viewport.querySelectorAll(".paper-doc-col").forEach(n => n.remove());
+  wires.innerHTML = ""; banner.hidden = true; info.hidden = true; sub.textContent = "loading…";
   _vp.tx = 0; _vp.ty = 0; _vp.scale = 1; _applyVp();
 
   let payload;
   try { payload = await api(`/packages/${pkgId}/grounding`); }
-  catch (e) {
-    toastError("Could not load grounding", e.message || String(e));
-    banner.hidden = false; banner.textContent = `Could not fetch grounding data: ${e.message || e}`;
-    sub.textContent = "—"; return;
-  }
+  catch (e) { toastError("Could not load grounding", e.message || String(e)); banner.hidden = false; banner.textContent = `Could not fetch grounding data: ${e.message || e}`; sub.textContent = "—"; return; }
 
   const all = payload.groundings || [];
-  const threads = all.filter(g =>
-    g.primary?.artifact_id && g.conflicts_with &&
+  const threads = all.filter(g => g.primary?.artifact_id && g.conflicts_with &&
     g.conflicts_with.some(c => c.artifact_id && c.artifact_id !== g.primary.artifact_id));
-
   state.grounding = { pkgId, payload, threads, selected: null };
+
   const pkgName = state.currentPackage?.name || pkgId;
   const hidden = all.length - threads.length;
   sub.innerHTML = payload.run_id
-    ? `${escapeHtml(pkgName)} · run ${escapeHtml(payload.run_id)}`
-      + (hidden > 0 ? ` · ${hidden} single-doc finding${hidden === 1 ? "" : "s"} shown in the Attestation Gate` : "")
+    ? `${escapeHtml(pkgName)} · ${threads.length} cross-document contradiction${threads.length === 1 ? "" : "s"}`
+      + (hidden > 0 ? ` · ${hidden} single-doc finding${hidden === 1 ? "" : "s"} in the Attestation Gate` : "")
     : `${escapeHtml(pkgName)} · no analysis run yet`;
 
-  if (!payload.run_id) {
-    banner.hidden = false;
-    banner.innerHTML = `No analysis runs yet — <a href="#" id="gGoBack">go back to the package</a> and click <b>↻ Analyze package</b>.`;
-    $("#gGoBack")?.addEventListener("click", (e) => { e.preventDefault(); _gExit(); });
-    return;
-  }
-  if (!threads.length) {
-    banner.hidden = false;
-    banner.innerHTML = `<b>No cross-document contradictions in this run.</b> This view links a passage in one document to a conflicting passage in another. Single-document findings live in the Attestation Gate.`;
-    return;
-  }
+  if (!payload.run_id) { banner.hidden = false; banner.innerHTML = `No analysis runs yet — <a href="#" id="gGoBack">go back to the package</a> and click <b>↻ Analyze package</b>.`; $("#gGoBack")?.addEventListener("click", e => { e.preventDefault(); _gExit(); }); return; }
+  if (!threads.length) { banner.hidden = false; banner.innerHTML = `<b>No cross-document contradictions in this run.</b> This view links a passage in one document to a conflicting passage in another. Single-document findings live in the Attestation Gate.`; return; }
 
-  // Pages that participate in at least one thread.
   const used = new Set();
   threads.forEach(g => { used.add(g.primary.artifact_id); g.conflicts_with.forEach(c => used.add(c.artifact_id)); });
-  const pages = (payload.artifacts || []).filter(a => used.has(a.id));
+  const docs = (payload.artifacts || []).filter(a => used.has(a.id));
 
-  // Number threads + collect per-artifact quotes.
-  threads.forEach((g, idx) => { g._idx = idx; });
   const quotesByArtifact = new Map();
   for (const g of threads) {
-    const push = (aid, q) => {
-      if (!aid || !q) return;
-      if (!quotesByArtifact.has(aid)) quotesByArtifact.set(aid, []);
-      quotesByArtifact.get(aid).push({ finding_id: g.finding_id, quote: q, severity: _gSev(g) });
-    };
+    const push = (aid, q) => { if (!aid || !q) return; if (!quotesByArtifact.has(aid)) quotesByArtifact.set(aid, []); quotesByArtifact.get(aid).push({ finding_id: g.finding_id, quote: q, severity: _gSev(g) }); };
     push(g.primary.artifact_id, g.primary.quote);
     g.conflicts_with.forEach(c => push(c.artifact_id, c.quote));
   }
 
-  // Lay pages in a row. Top band leaves room for one lane PER WIRE (a 3-way
-  // contradiction draws two wires from the primary, so count conflicts).
-  const totalWires = threads.reduce((n, t) =>
-    n + (t.conflicts_with || []).filter(c => c.artifact_id !== t.primary.artifact_id).length, 0);
+  const totalWires = threads.reduce((n, t) => n + (t.conflicts_with || []).filter(c => c.artifact_id !== t.primary.artifact_id).length, 0);
   const band = _LANE_TOP_PAD + Math.max(threads.length, totalWires) * _LANE_GAP + 30;
-  const pageEls = new Map();
-  let x = _PAGE_X0;
-  for (const art of pages) {
-    const page = _makePage(art, quotesByArtifact.get(art.id) || []);
-    page.style.left = x + "px";
-    page.style.top  = band + "px";
-    viewport.appendChild(page);
-    pageEls.set(art.id, page);
-    x += _PAGE_W + _PAGE_GAP;
+
+  const colEls = new Map();
+  let x = _COL_X0;
+  for (const art of docs) {
+    const col = _makeDocColumn(art, quotesByArtifact.get(art.id) || [], viewport, x, band);
+    colEls.set(art.id, col);
+    x += _COL_W + _COL_GAP;
   }
-  state.grounding._pageEls = pageEls;
+  state.grounding._colEls = colEls;
   state.grounding._band = band;
 
   await new Promise(r => requestAnimationFrame(() => r()));
   _drawThreads();
-  _smartFit(pages.length);
+  _fitAll();
 }
 
-// ── Thread geometry + drawing ────────────────────────────────── //
-function _citAnchor(page, fid, preferRightEdge) {
-  // Return {x,y} in viewport-local coords for the citation's top-near corner.
-  const hl = page.querySelector(`.pp-hl[data-finding-id="${CSS.escape(fid)}"]`);
+// ── thread geometry ──────────────────────────────────────────── //
+function _citAnchor(col, fid, preferRightEdge) {
+  const hl = col.querySelector(`.pp-hl[data-finding-id="${CSS.escape(fid)}"]`);
   if (!hl) return null;
   const vp = $("#groundingViewport").getBoundingClientRect();
   const rects = hl.getClientRects();
   const r = rects.length ? rects[0] : hl.getBoundingClientRect();
-  const top = r.top - vp.top;
-  const x = preferRightEdge ? (r.right - vp.left) : (r.left - vp.left);
-  return { x, y: top, el: hl };
+  return { x: preferRightEdge ? (r.right - vp.left) : (r.left - vp.left), y: r.top - vp.top, el: hl };
 }
-
-// Build an orthogonal path string with small rounded corners through points.
 function _ortho(points, radius) {
   if (points.length < 2) return "";
   let d = `M ${points[0].x} ${points[0].y}`;
   for (let i = 1; i < points.length - 1; i++) {
     const p0 = points[i - 1], p1 = points[i], p2 = points[i + 1];
-    const v1x = Math.sign(p1.x - p0.x), v1y = Math.sign(p1.y - p0.y);
-    const v2x = Math.sign(p2.x - p1.x), v2y = Math.sign(p2.y - p1.y);
     const r1 = Math.min(radius, Math.hypot(p1.x - p0.x, p1.y - p0.y) / 2);
     const r2 = Math.min(radius, Math.hypot(p2.x - p1.x, p2.y - p1.y) / 2);
-    const aX = p1.x - v1x * r1, aY = p1.y - v1y * r1;
-    const bX = p1.x + v2x * r2, bY = p1.y + v2y * r2;
+    const aX = p1.x - Math.sign(p1.x - p0.x) * r1, aY = p1.y - Math.sign(p1.y - p0.y) * r1;
+    const bX = p1.x + Math.sign(p2.x - p1.x) * r2, bY = p1.y + Math.sign(p2.y - p1.y) * r2;
     d += ` L ${aX} ${aY} Q ${p1.x} ${p1.y} ${bX} ${bY}`;
   }
-  const last = points[points.length - 1];
-  d += ` L ${last.x} ${last.y}`;
-  return d;
+  const last = points[points.length - 1]; d += ` L ${last.x} ${last.y}`; return d;
 }
-
 function _drawThreads() {
   const g = state.grounding; if (!g) return;
-  const wires = $("#groundingWires");
-  wires.innerHTML = "";
-  const pageEls = g._pageEls;
-  const band = g._band;
-
-  // Size SVG to the page bounding box.
+  const wires = $("#groundingWires"); wires.innerHTML = "";
+  const colEls = g._colEls, band = g._band;
   let maxX = 0, maxY = 0;
-  for (const p of pageEls.values()) {
-    maxX = Math.max(maxX, (parseInt(p.style.left, 10) || 0) + p.offsetWidth);
-    maxY = Math.max(maxY, (parseInt(p.style.top, 10) || 0) + p.offsetHeight);
+  for (const c of colEls.values()) {
+    maxX = Math.max(maxX, (parseInt(c.style.left, 10) || 0) + c.offsetWidth);
+    maxY = Math.max(maxY, (parseInt(c.style.top, 10) || 0) + c.offsetHeight);
   }
-  wires.setAttribute("width", maxX + 140);
-  wires.setAttribute("height", maxY + 60);
+  wires.setAttribute("width", maxX + 140); wires.setAttribute("height", maxY + 60);
 
-  let laneIdx = 0;   // global — one horizontal lane per wire, never shared
+  let laneIdx = 0;
   g.threads.forEach((thread) => {
-    const srcPage = pageEls.get(thread.primary.artifact_id);
-    if (!srcPage) return;
+    const srcCol = colEls.get(thread.primary.artifact_id); if (!srcCol) return;
     const sev = _gSev(thread);
-    // Draw a wire to EACH conflicting document (3-way contradictions yield
-    // two wires from the primary). Every conflict here genuinely differs from
-    // the primary — the generator guarantees 3-way controls use three
-    // distinct frequencies.
-    const peers = (thread.conflicts_with || [])
-      .filter(c => pageEls.get(c.artifact_id) && c.artifact_id !== thread.primary.artifact_id);
+    const peers = (thread.conflicts_with || []).filter(c => colEls.get(c.artifact_id) && c.artifact_id !== thread.primary.artifact_id);
     peers.forEach((conflict) => {
-      const dstPage = pageEls.get(conflict.artifact_id);
-      const srcLeft = parseInt(srcPage.style.left, 10) || 0;
-      const dstLeft = parseInt(dstPage.style.left, 10) || 0;
+      const dstCol = colEls.get(conflict.artifact_id);
+      const srcLeft = parseInt(srcCol.style.left, 10) || 0, dstLeft = parseInt(dstCol.style.left, 10) || 0;
       const srcIsLeft = srcLeft < dstLeft;
-
-      const a = _citAnchor(srcPage, thread.finding_id, srcIsLeft);
-      const b = _citAnchor(dstPage, thread.finding_id, !srcIsLeft);
+      const a = _citAnchor(srcCol, thread.finding_id, srcIsLeft);
+      const b = _citAnchor(dstCol, thread.finding_id, !srcIsLeft);
       if (!a || !b) return;
-
-      const laneY = band - 26 - laneIdx * _LANE_GAP;
-      const off = (laneIdx % 5) * 6;
-      laneIdx += 1;
-      const srcGut = srcIsLeft ? (srcLeft + _PAGE_W + 30 + off) : (srcLeft - 30 - off);
-      const dstGut = srcIsLeft ? (dstLeft - 30 - off)           : (dstLeft + _PAGE_W + 30 + off);
-
-      const pts = [
-        { x: a.x, y: a.y }, { x: srcGut, y: a.y }, { x: srcGut, y: laneY },
-        { x: dstGut, y: laneY }, { x: dstGut, y: b.y }, { x: b.x, y: b.y },
-      ];
+      const laneY = band - 26 - laneIdx * _LANE_GAP, off = (laneIdx % 5) * 6; laneIdx += 1;
+      const srcGut = srcIsLeft ? (srcLeft + _COL_W + 30 + off) : (srcLeft - 30 - off);
+      const dstGut = srcIsLeft ? (dstLeft - 30 - off) : (dstLeft + _COL_W + 30 + off);
+      const pts = [{ x: a.x, y: a.y }, { x: srcGut, y: a.y }, { x: srcGut, y: laneY }, { x: dstGut, y: laneY }, { x: dstGut, y: b.y }, { x: b.x, y: b.y }];
       const d = _ortho(pts, 7);
-
-      const line = _svg("path", { d, class: `gw-line sev-${sev}`, "data-fid": thread.finding_id });
-      wires.appendChild(line);
-      const hit = _svg("path", { d, class: "gw-hit", "data-fid": thread.finding_id });
-      wires.appendChild(hit);
-      [a, b].forEach(pt => wires.appendChild(
-        _svg("circle", { cx: pt.x, cy: pt.y, r: 3.2, class: `gw-dot sev-${sev}`, "data-fid": thread.finding_id })));
-
-      // Label pill at this wire's lane midpoint.
-      const midX = (srcGut + dstGut) / 2;
-      const labelText = thread.control_id || "";
-      const pillW = 18 + labelText.length * 6.4;
+      wires.appendChild(_svg("path", { d, class: `gw-line sev-${sev}`, "data-fid": thread.finding_id }));
+      const hit = _svg("path", { d, class: "gw-hit", "data-fid": thread.finding_id }); wires.appendChild(hit);
+      [a, b].forEach(pt => wires.appendChild(_svg("circle", { cx: pt.x, cy: pt.y, r: 3.4, class: `gw-dot sev-${sev}`, "data-fid": thread.finding_id })));
+      const midX = (srcGut + dstGut) / 2, labelText = thread.control_id || "", pillW = 18 + labelText.length * 6.4;
       const grp = _svg("g", { class: "gw-label", "data-fid": thread.finding_id });
-      grp.appendChild(_svg("rect", { x: midX - pillW / 2, y: laneY - 10, width: pillW, height: 20, rx: 10,
-                                     fill: "var(--bg-surface)", stroke: "var(--border)", "stroke-width": 1 }));
+      grp.appendChild(_svg("rect", { x: midX - pillW / 2, y: laneY - 10, width: pillW, height: 20, rx: 10, fill: "var(--bg-surface)", stroke: "var(--border)", "stroke-width": 1 }));
       grp.appendChild(_svg("circle", { cx: midX - pillW / 2 + 9, cy: laneY, r: 3, class: `gw-dot sev-${sev}` }));
-      const tx = _svg("text", { x: midX + 4, y: laneY, fill: "var(--text-secondary)" });
-      tx.textContent = labelText;
-      grp.appendChild(tx);
+      const tx = _svg("text", { x: midX + 4, y: laneY, fill: "var(--text-secondary)" }); tx.textContent = labelText; grp.appendChild(tx);
       wires.appendChild(grp);
-
-      const onEnter = () => _hoverThread(thread.finding_id, true);
-      const onLeave = () => _hoverThread(thread.finding_id, false);
-      const onClick = (e) => { e.stopPropagation(); _selectThread(thread.finding_id); };
-      [hit, grp, a.el, b.el].forEach(el => {
-        el.addEventListener("mouseenter", onEnter);
-        el.addEventListener("mouseleave", onLeave);
-        el.addEventListener("click", onClick);
-      });
+      const onEnter = () => _hoverThread(thread.finding_id, true), onLeave = () => _hoverThread(thread.finding_id, false), onClick = (e) => { e.stopPropagation(); _selectThread(thread.finding_id); };
+      [hit, grp, a.el, b.el].forEach(el => { el.addEventListener("mouseenter", onEnter); el.addEventListener("mouseleave", onLeave); el.addEventListener("click", onClick); });
     });
   });
 }
 
-function _applyThreadState(fid, lock) {
-  const all = document.querySelectorAll("#groundingWires .gw-line");
-  const dots = document.querySelectorAll("#groundingWires .gw-dot");
-  const labels = document.querySelectorAll("#groundingWires .gw-label");
-  const hls = document.querySelectorAll(".paper-page .pp-hl");
-  const pages = document.querySelectorAll(".paper-page");
+// ── selection / hover ────────────────────────────────────────── //
+function _applyThreadState(fid) {
   const involved = new Set();
-  if (fid) {
-    const t = state.grounding.threads.find(x => x.finding_id === fid);
-    if (t) { involved.add(t.primary.artifact_id); t.conflicts_with.forEach(c => involved.add(c.artifact_id)); }
+  if (fid) { const t = state.grounding.threads.find(x => x.finding_id === fid); if (t) { involved.add(t.primary.artifact_id); t.conflicts_with.forEach(c => involved.add(c.artifact_id)); } }
+  document.querySelectorAll("#groundingWires .gw-line").forEach(p => { const on = p.dataset.fid === fid; p.classList.toggle("is-active", !!fid && on); p.classList.toggle("is-dimmed", !!fid && !on); });
+  document.querySelectorAll("#groundingWires .gw-dot").forEach(dd => dd.classList.toggle("is-dimmed", !!fid && dd.dataset.fid !== fid && dd.dataset.fid !== undefined));
+  document.querySelectorAll("#groundingWires .gw-label").forEach(l => l.classList.toggle("is-dimmed", !!fid && l.dataset.fid !== fid));
+  document.querySelectorAll(".paper-sheet .pp-hl").forEach(h => { h.classList.toggle("is-active", !!fid && h.dataset.findingId === fid); h.classList.toggle("is-dimmed", !!fid && h.dataset.findingId !== fid); });
+  document.querySelectorAll(".paper-doc-col").forEach(c => c.classList.toggle("is-faded", !!fid && !involved.has(c.dataset.artifactId)));
+}
+function _hoverThread(fid, on) { if (state.grounding?.selected) return; _applyThreadState(on ? fid : null); }
+
+// Extract a frequency word from a quote (the conflict carrier).
+function _extractFreq(quote) {
+  const m = (quote || "").match(/\b(daily|weekly|monthly|quarterly|annually|yearly|biannually|semi-?annually|every\s+\d+\s+(?:days?|weeks?|months?|years?))\b/i);
+  return m ? m[0].toLowerCase() : null;
+}
+// Build a meaningful, non-repetitive explanation.
+function _explainThread(t) {
+  const fA = _extractFreq(t.primary?.quote);
+  const peers = (t.conflicts_with || []);
+  const peerFreqs = peers.map(c => ({ file: c.filename, freq: _extractFreq(c.quote) })).filter(x => x.freq);
+  if (fA && peerFreqs.length) {
+    const noun = t.control_title ? t.control_title.toLowerCase() : "this control";
+    const primaryFile = (t.primary?.filename || "one document");
+    const others = peerFreqs.map(p => `<b>${escapeHtml(p.file)}</b> says <b>${escapeHtml(p.freq)}</b>`).join(", ");
+    return `The required cadence for <b>${escapeHtml(t.control_id)}</b> (${escapeHtml(noun)}) is stated differently across documents: `
+         + `<b>${escapeHtml(primaryFile)}</b> says <b>${escapeHtml(fA)}</b>, while ${others}. `
+         + `RMF requires a single organization-defined frequency — these must be reconciled, or an assessor will treat the control as not consistently implemented.`;
   }
-  all.forEach(p => {
-    const on = p.dataset.fid === fid;
-    p.classList.toggle("is-active", !!fid && on);
-    p.classList.toggle("is-dimmed", !!fid && !on);
-  });
-  dots.forEach(d => d.classList.toggle("is-dimmed", !!fid && d.dataset.fid !== fid && d.dataset.fid !== undefined));
-  labels.forEach(l => l.classList.toggle("is-dimmed", !!fid && l.dataset.fid !== fid));
-  hls.forEach(h => {
-    h.classList.toggle("is-active", !!fid && h.dataset.findingId === fid);
-    h.classList.toggle("is-dimmed", !!fid && h.dataset.findingId !== fid);
-  });
-  pages.forEach(pg => pg.classList.toggle("is-faded", !!fid && !involved.has(pg.dataset.artifactId)));
+  // Fallback to a cleaned rationale, then a generic line.
+  let r = (t.rationale || "").trim().replace(/\s*\[[^\]]*\]\s*$/g, "").replace(/\(art-[^)]*\)/g, "").replace(/\s{2,}/g, " ")
+           .replace(/states conflicting values across artifacts after synonym normalization\.?/i, "states conflicting values across documents.")
+           .replace(/\s+([.,;:])/g, "$1").replace(/\.{2,}/g, ".").replace(/[\s.]+$/, "").trim();
+  if (r && r.length > 4) return escapeHtml(r) + ".";
+  const peerNames = peers.map(c => c.filename).filter(Boolean);
+  return `${escapeHtml(t.primary?.filename || "This document")} and ${escapeHtml(peerNames[0] || "another document")} give different values for <b>${escapeHtml(t.control_id)}</b>. Reconcile them so the package is internally consistent.`;
 }
-
-function _hoverThread(fid, on) {
-  if (state.grounding?.selected) return;   // selection wins
-  _applyThreadState(on ? fid : null, false);
-}
-
 function _selectThread(fid) {
-  state.grounding.selected = fid;
-  _applyThreadState(fid, true);
-  const t = state.grounding.threads.find(x => x.finding_id === fid);
-  if (!t) return;
-  const card = $("#groundingInfoCard");
-  const sev = _gSev(t);
-  const p = t.primary || {};
-  const conflicts = t.conflicts_with || [];
-  const conflictBlocks = conflicts.map(c => `
-    <div>
-      <div class="gif-side-label"><span class="gif-side-dot" style="background: var(--accent);"></span>${escapeHtml(c.filename || "")} · ${escapeHtml(c.locator || "")}</div>
-      <div class="gif-quote">${escapeHtml((c.quote || "").replace(/\*\*/g, "").trim())}</div>
-    </div>`).join("");
+  state.grounding.selected = fid; _applyThreadState(fid);
+  const t = state.grounding.threads.find(x => x.finding_id === fid); if (!t) return;
+  const card = $("#groundingInfoCard"), sev = _gSev(t), p = t.primary || {}, conflicts = t.conflicts_with || [];
   const why = _explainThread(t);
+  const conflictBlocks = conflicts.map(c => `<div><div class="gif-side-label"><span class="gif-side-dot" style="background: var(--accent);"></span>${escapeHtml(c.filename || "")} · ${escapeHtml(c.locator || "")}</div><div class="gif-quote">${escapeHtml((c.quote || "").replace(/\*\*/g, "").trim())}</div></div>`).join("");
   card.className = "grounding-info-card";
   card.innerHTML = `
     <div class="gif-head">
@@ -3062,141 +2892,81 @@ function _selectThread(fid) {
       <span class="gif-control">${escapeHtml(t.control_id)}<span class="gif-ctrl-title">${t.control_title ? " · " + escapeHtml(t.control_title) : ""}</span></span>
       <button class="gif-close" id="gifClose" aria-label="close">×</button>
     </div>
-    ${why ? `<div class="gif-why"><span class="gif-why-label">Why flagged</span>${escapeHtml(why)}</div>` : ""}
+    ${why ? `<div class="gif-why"><span class="gif-why-label">Why this is flagged</span>${why}</div>` : ""}
     <div class="gif-grid">
-      <div>
-        <div class="gif-side-label"><span class="gif-side-dot" style="background: var(--accent);"></span>${escapeHtml(p.filename || "")} · ${escapeHtml(p.locator || "")}</div>
-        <div class="gif-quote">${escapeHtml((p.quote || "").replace(/\*\*/g, "").trim())}</div>
-      </div>
+      <div><div class="gif-side-label"><span class="gif-side-dot" style="background: var(--accent);"></span>${escapeHtml(p.filename || "")} · ${escapeHtml(p.locator || "")}</div><div class="gif-quote">${escapeHtml((p.quote || "").replace(/\*\*/g, "").trim())}</div></div>
       ${conflictBlocks}
       ${t.regulatory?.objective_summary ? `<div class="gif-rule"><span class="gif-rule-label">Regulatory grounding · NIST ${escapeHtml(t.control_id)}</span>${escapeHtml(t.regulatory.objective_summary)}</div>` : ""}
     </div>`;
   card.hidden = false;
   $("#gifClose")?.addEventListener("click", () => _clearThread());
 }
+function _clearThread() { if (!state.grounding) return; state.grounding.selected = null; _applyThreadState(null); $("#groundingInfoCard").hidden = true; }
 
-// Short plain-language "why" line for a contradiction. Prefers the finding's
-// rationale (LLM-written for Tier 2; rule-generated for Tier 0), stripped of
-// internal noise — the trailing "[severity factors: …]" tag and the
-// "(art-xxxx: ['monthly']; art-yyyy: ['quarterly'])" artifact-id dump. Falls
-// back to the recommendation, then to a composed one-liner.
-function _explainThread(t) {
-  let r = (t.rationale || "").trim();
-  // Drop any bracketed severity/factor annotation.
-  r = r.replace(/\s*\[[^\]]*\]\s*$/g, "").trim();
-  // Replace the raw "(art-xxxx: [...]; ...)" dump with the human values.
-  r = r.replace(/\(art-[^)]*\)/g, "").replace(/\s{2,}/g, " ").trim();
-  // Translate the rule's stock phrasing into something readable.
-  r = r.replace(/states conflicting values across artifacts after synonym normalization\.?/i,
-                "states conflicting values across two documents.");
-  // Tidy orphaned punctuation left by the removals.
-  r = r.replace(/\s+([.,;:])/g, "$1").replace(/\.{2,}/g, ".").replace(/[\s.]+$/, "").trim();
-  if (r && r.length > 4) {
-    r = r.length > 240 ? r.slice(0, 237).trimEnd() + "…" : r + ".";
-    return r;
-  }
-  if (t.recommendation) return t.recommendation;
-  const peerNames = (t.conflicts_with || []).map(c => c.filename).filter(Boolean);
-  const peer = peerNames.length ? peerNames[0] : "another document";
-  return `${t.primary?.filename || "This document"} and ${peer} give different values for `
-       + `${t.control_id}${t.control_title ? " (" + t.control_title + ")" : ""}. Reconcile them so the package is internally consistent.`;
-}
-
-function _clearThread() {
-  if (!state.grounding) return;
-  state.grounding.selected = null;
-  _applyThreadState(null, false);
-  $("#groundingInfoCard").hidden = true;
-}
-
-// ── Pan & zoom ───────────────────────────────────────────────── //
+// ── pan & zoom (rAF-throttled) ───────────────────────────────── //
 const _vp = { tx: 0, ty: 0, scale: 1 };
+let _vpRaf = 0;
 function _applyVp() {
   const v = $("#groundingViewport"); if (!v) return;
   v.style.transform = `translate(${_vp.tx}px, ${_vp.ty}px) scale(${_vp.scale})`;
   const z = $("#zoomReadout"); if (z) z.textContent = Math.round(_vp.scale * 100) + "%";
 }
-function _smartFit(n) { (n <= 3) ? _fitAll() : _fitOne(); }
+function _scheduleVp() { if (_vpRaf) return; _vpRaf = requestAnimationFrame(() => { _vpRaf = 0; _applyVp(); }); }
 function _fitAll() {
   const stage = $("#groundingStage"), vp = $("#groundingViewport");
-  const pages = vp.querySelectorAll(".paper-page");
-  if (!pages.length) { _vp.tx = _vp.ty = 0; _vp.scale = 1; _applyVp(); return; }
+  const cols = vp.querySelectorAll(".paper-doc-col");
+  if (!cols.length) { _vp.tx = _vp.ty = 0; _vp.scale = 1; _applyVp(); return; }
   let maxX = 0, maxY = 0;
-  pages.forEach(p => {
-    maxX = Math.max(maxX, (parseInt(p.style.left, 10) || 0) + p.offsetWidth);
-    maxY = Math.max(maxY, (parseInt(p.style.top, 10) || 0) + p.offsetHeight);
-  });
-  const pad = 70;
-  const sx = (stage.clientWidth - pad * 2) / (maxX + _PAGE_X0);
+  cols.forEach(c => { maxX = Math.max(maxX, (parseInt(c.style.left, 10) || 0) + c.offsetWidth); maxY = Math.max(maxY, (parseInt(c.style.top, 10) || 0) + c.offsetHeight); });
+  const pad = 60;
+  const sx = (stage.clientWidth - pad * 2) / (maxX + _COL_X0);
   const sy = (stage.clientHeight - pad * 2) / (maxY + 40);
-  // Keep pages legible — never auto-shrink below 0.5. If the row is wider
-  // than the viewport at that floor, the user pans (and can zoom out).
-  _vp.scale = Math.max(0.5, Math.min(sx, sy, 1));
-  // Left-align (with pad) when content overflows; center when it fits.
-  const contentW = (maxX + _PAGE_X0) * _vp.scale;
-  const contentH = (maxY + 40) * _vp.scale;
-  _vp.tx = contentW < stage.clientWidth ? (stage.clientWidth - contentW) / 2 : pad;
-  _vp.ty = contentH < stage.clientHeight ? Math.max(20, (stage.clientHeight - contentH) / 2) : 20;
+  _vp.scale = Math.max(0.3, Math.min(sx, sy, 1));
+  const cw = (maxX + _COL_X0) * _vp.scale, ch = (maxY + 40) * _vp.scale;
+  _vp.tx = cw < stage.clientWidth ? (stage.clientWidth - cw) / 2 : pad;
+  _vp.ty = ch < stage.clientHeight ? Math.max(20, (stage.clientHeight - ch) / 2) : 20;
   _applyVp();
-}
-function _fitOne() {
-  const stage = $("#groundingStage"), pad = 70;
-  _vp.scale = Math.max(0.3, Math.min((stage.clientWidth - pad * 2) / (_PAGE_W + _PAGE_X0 * 2), 1));
-  _vp.tx = pad; _vp.ty = pad; _applyVp();
 }
 function _zoomBy(factor, ax, ay) {
   const stage = $("#groundingStage"); const rect = stage.getBoundingClientRect();
-  const cx = (ax ?? rect.left + rect.width / 2) - rect.left;
-  const cy = (ay ?? rect.top + rect.height / 2) - rect.top;
+  const cx = (ax ?? rect.left + rect.width / 2) - rect.left, cy = (ay ?? rect.top + rect.height / 2) - rect.top;
   const old = _vp.scale, ns = Math.max(0.2, Math.min(2.5, old * factor));
-  _vp.tx = cx - ((cx - _vp.tx) / old) * ns;
-  _vp.ty = cy - ((cy - _vp.ty) / old) * ns;
-  _vp.scale = ns; _applyVp();
+  _vp.tx = cx - ((cx - _vp.tx) / old) * ns; _vp.ty = cy - ((cy - _vp.ty) / old) * ns; _vp.scale = ns; _applyVp();
 }
 function _wirePanZoom() {
   const stage = $("#groundingStage"); if (!stage || stage._wired) return; stage._wired = true;
+  const vpEl = $("#groundingViewport");
   let drag = false, sx = 0, sy = 0, stx = 0, sty = 0;
   stage.addEventListener("mousedown", (e) => {
     if (e.target.closest(".pp-hl, .gw-hit, .gw-label, .grounding-info-card")) return;
     drag = true; sx = e.clientX; sy = e.clientY; stx = _vp.tx; sty = _vp.ty;
-    stage.classList.add("is-panning");
+    stage.classList.add("is-panning"); vpEl.classList.add("is-interacting");
   });
-  window.addEventListener("mousemove", (e) => {
-    if (!drag) return; _vp.tx = stx + (e.clientX - sx); _vp.ty = sty + (e.clientY - sy); _applyVp();
-  });
-  window.addEventListener("mouseup", () => { if (drag) { drag = false; stage.classList.remove("is-panning"); } });
+  window.addEventListener("mousemove", (e) => { if (!drag) return; _vp.tx = stx + (e.clientX - sx); _vp.ty = sty + (e.clientY - sy); _scheduleVp(); });
+  window.addEventListener("mouseup", () => { if (drag) { drag = false; stage.classList.remove("is-panning"); vpEl.classList.remove("is-interacting"); } });
+  let wheelT;
   stage.addEventListener("wheel", (e) => {
     if (e.target.closest(".grounding-info-card")) return;
-    e.preventDefault(); _zoomBy(e.deltaY < 0 ? 1.12 : 0.9, e.clientX, e.clientY);
+    e.preventDefault(); vpEl.classList.add("is-interacting");
+    _zoomBy(e.deltaY < 0 ? 1.1 : 0.91, e.clientX, e.clientY);
+    clearTimeout(wheelT); wheelT = setTimeout(() => vpEl.classList.remove("is-interacting"), 200);
   }, { passive: false });
-  stage.addEventListener("click", (e) => {
-    if (e.target.closest(".pp-hl, .gw-hit, .gw-label, .grounding-info-card, .paper-page")) return;
-    _clearThread();
-  });
+  stage.addEventListener("click", (e) => { if (e.target.closest(".pp-hl, .gw-hit, .gw-label, .grounding-info-card, .paper-doc-col")) return; _clearThread(); });
 }
 
-function _gExit() {
-  switchView("packages");
-  if (state.currentPackageId && typeof openPackageDetail === "function") openPackageDetail(state.currentPackageId);
-}
+function _gExit() { switchView("packages"); if (state.currentPackageId && typeof openPackageDetail === "function") openPackageDetail(state.currentPackageId); }
 
-(function wireGroundingV3() {
+(function wireGroundingV4() {
   document.addEventListener("click", (e) => {
     if (e.target.closest("#pkgGroundingBtn")) {
       if (!state.currentPackageId) { toastError("No package selected", "Open a package, then click Grounded view."); return; }
-      switchView("grounding");
-      requestAnimationFrame(() => { _wirePanZoom(); renderGrounding(state.currentPackageId); });
+      switchView("grounding"); requestAnimationFrame(() => { _wirePanZoom(); renderGrounding(state.currentPackageId); });
     }
     if (e.target.closest("#groundingBackBtn")) { e.preventDefault(); _gExit(); }
-    if (e.target.closest("#zoomInBtn"))  _zoomBy(1.12);
+    if (e.target.closest("#zoomInBtn")) _zoomBy(1.12);
     if (e.target.closest("#zoomOutBtn")) _zoomBy(0.9);
     if (e.target.closest("#zoomFitBtn")) _fitAll();
   });
   let rT;
-  window.addEventListener("resize", () => {
-    clearTimeout(rT);
-    rT = setTimeout(() => {
-      if (document.getElementById("view-grounding")?.classList.contains("active") && state.grounding?._pageEls) _drawThreads();
-    }, 150);
-  });
+  window.addEventListener("resize", () => { clearTimeout(rT); rT = setTimeout(() => { if (document.getElementById("view-grounding")?.classList.contains("active") && state.grounding?._colEls) _drawThreads(); }, 150); });
 })();

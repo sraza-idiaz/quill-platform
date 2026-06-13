@@ -1352,229 +1352,308 @@ textarea:focus-visible, .file-drop:focus-within, .nav-link:focus-visible,
 }
 .map-resolved-note .map-run-chip { margin: 0 2px; }
 
+
 /* ─────────────────────────────────────────────────────────────
-   VISUAL GROUNDING (Phase II — defensible evidence visualization)
-   Source spans on the left, curved wires to grounding cards on
-   the right with regulatory citation + cross-doc conflict info.
+   VISUAL GROUNDING — paper canvas (Phase II, redesigned)
+   Full-bleed workspace. Each artifact renders as a letter-paper
+   page. Cross-document contradictions are drawn as curved wires
+   bridging highlighted passages between pages. Pan + zoom.
    ───────────────────────────────────────────────────────────── */
 
-/* Toolbar with filter chips + count */
-.grounding-toolbar {
-  display: flex; align-items: center; gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
-  border-bottom: 1px solid var(--border);
-}
-.grounding-filter-chips { display: flex; gap: 6px; }
-.filter-chip {
-  background: transparent; color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-family: var(--font-mono); font-size: 11.5px;
-  cursor: pointer; transition: var(--transition-fast);
-}
-.filter-chip:hover { border-color: var(--accent); color: var(--accent); }
-.filter-chip.is-active {
-  background: var(--accent-subtle); color: var(--accent);
-  border-color: var(--accent);
-}
-.grounding-count-chip {
-  margin-left: auto;
-  font-family: var(--font-mono); font-size: 11.5px;
-  color: var(--text-muted);
+.view-frame.view-frame-bleed {
+  padding: 0;
+  background: var(--bg-base);
 }
 
-/* Body — vertical stack of per-artifact panels */
-.grounding-body { padding: var(--space-4) var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
-.grounding-banner {
-  margin: var(--space-5); padding: var(--space-4) var(--space-5);
-  border: 1px dashed var(--border-strong); border-radius: var(--radius-md);
-  text-align: center; color: var(--text-secondary);
-  font-family: var(--font-serif); font-style: italic;
+.grounding-canvas {
+  position: relative;
+  height: calc(100vh - 56px - 32px);   /* topbar (56) + footer (32) */
+  display: flex; flex-direction: column;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(92,201,138,0.04), transparent 60%),
+    var(--bg-base);
 }
 
-/* Per-artifact panel */
-.grounding-panel {
-  border: 1px solid var(--border); border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  overflow: hidden;
-}
-.grounding-panel-header {
-  display: flex; align-items: center; gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg-elevated);
+/* ── Floating topbar above the canvas ── */
+.grounding-topbar {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 20px 12px;
   border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-titlebar);
+  flex-shrink: 0;
+  z-index: 4;
 }
-.grounding-panel-header .filename { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.grounding-panel-header .type-pill {
-  font-family: var(--font-display); font-weight: 700;
-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
-  padding: 2px 8px; border-radius: var(--radius-sm);
-  background: var(--bg-surface); border: 1px solid var(--border); color: var(--text-secondary);
+.grounding-meta { flex: 1; min-width: 0; }
+.grounding-meta .grounding-title {
+  margin: 0; font-family: var(--font-display); font-weight: 700;
+  font-size: 15px; letter-spacing: 0.02em; color: var(--text-primary);
 }
-.grounding-panel-header .count { margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted); }
+.grounding-meta .grounding-sub {
+  margin: 2px 0 0; font-family: var(--font-serif); font-style: italic;
+  font-size: 12px; color: var(--text-secondary);
+}
 
-.grounding-panel-body {
-  display: flex; gap: 0;
-  padding: var(--space-4) var(--space-4);
-  position: relative;
-  min-height: 240px;
+.grounding-zoom-controls {
+  display: flex; align-items: center; gap: 4px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 999px; padding: 4px;
 }
-.ground-source {
-  flex: 0 0 55%; min-width: 0;
-  background: var(--bg-elevated); border: 1px solid var(--border-subtle);
+.grounding-zoom-controls .zoom-btn {
+  font-family: var(--font-mono); font-size: 12px;
+  background: transparent; color: var(--text-secondary);
+  border: none; cursor: pointer;
+  padding: 4px 12px; border-radius: 999px;
+  transition: var(--transition-fast);
+  min-width: 28px;
+}
+.grounding-zoom-controls .zoom-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.grounding-zoom-controls .zoom-readout {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+  min-width: 44px; text-align: center;
+}
+
+.grounding-banner {
+  margin: 16px 20px 0;
+  padding: 14px 18px;
+  border: 1px dashed var(--border-strong);
   border-radius: var(--radius-md);
-  padding: var(--space-4);
-  position: relative;
-  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7;
-  color: var(--text-primary);
-  white-space: pre-wrap; word-break: break-word;
-  max-height: 520px; overflow: auto;
+  background: var(--bg-surface);
+  text-align: center;
+  font-family: var(--font-serif); font-style: italic;
+  color: var(--text-secondary);
 }
-.ground-wire-gutter {
-  flex: 0 0 60px;
-  position: relative;
+.grounding-banner a { color: var(--accent); text-decoration: underline; }
+
+/* ── Stage = pan/zoom container. Viewport = transformable inner. ── */
+.grounding-stage {
+  flex: 1; min-height: 0;
+  position: relative; overflow: hidden;
+  cursor: grab;
+  background:
+    radial-gradient(circle at 1px 1px, var(--border-subtle) 1px, transparent 0);
+  background-size: 22px 22px;
 }
-.ground-wire-gutter svg {
-  position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible;
-  pointer-events: none;          /* let chips/cards take clicks; hit-paths re-enable below */
+.grounding-stage.is-panning { cursor: grabbing; }
+.grounding-viewport {
+  position: absolute; top: 0; left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
 }
-.ground-wire-gutter svg .ground-hit { pointer-events: stroke; cursor: pointer; }
-.ground-cards {
-  flex: 1; min-width: 0;
-  display: flex; flex-direction: column; gap: var(--space-3);
-  padding-left: var(--space-3);
+.grounding-wires {
+  position: absolute; top: 0; left: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 3;
+}
+.grounding-wires path.gw-line {
+  fill: none; stroke-linecap: round;
+  transition: opacity 180ms ease, stroke-width 180ms ease;
+}
+.grounding-wires path.gw-hit {
+  fill: none; stroke: transparent; stroke-width: 18;
+  pointer-events: stroke; cursor: pointer;
 }
 
-/* Highlighted span inside the source pane */
-.ground-hl {
-  display: inline; padding: 1px 4px; border-radius: 3px;
-  border-left: 2px solid var(--text-muted);
-  transition: var(--transition-fast);
+/* ── Paper page ── */
+.paper-page {
+  position: absolute;
+  width: 520px;
+  background: #FFFEF7;                  /* warm paper white, theme-independent */
+  color: #1f1c1a;                       /* warm black for body */
+  border-radius: 2px;
+  padding: 52px 56px 64px;
+  font-family: var(--font-serif);
+  font-size: 14px; line-height: 1.65;
+  box-shadow:
+    0 1px 0 rgba(0,0,0,0.04),
+    0 6px 14px rgba(0,0,0,0.08),
+    0 24px 48px rgba(0,0,0,0.10);
+  transition: box-shadow 220ms ease;
 }
-.ground-hl.sev-critical { background: rgba(255,122,107,0.18); border-left-color: var(--sev-critical); }
-.ground-hl.sev-high     { background: rgba(255,157,107,0.18); border-left-color: var(--sev-high); }
-.ground-hl.sev-medium   { background: rgba(242,193,104,0.18); border-left-color: var(--sev-medium); }
-.ground-hl.sev-low      { background: rgba(138,162,152,0.18); border-left-color: var(--sev-low); }
-[data-theme="light"] .ground-hl.sev-critical { background: rgba(255,122,107,0.18); }
-[data-theme="light"] .ground-hl.sev-high     { background: rgba(255,157,107,0.18); }
-
-/* Pulse animation when a card click scrolls a highlight into view */
-@keyframes ground-pulse-kf {
-  0%   { box-shadow: 0 0 0 0 var(--accent-glow); }
-  50%  { box-shadow: 0 0 0 6px var(--accent-subtle); }
-  100% { box-shadow: 0 0 0 0 transparent; }
+[data-theme="light"] .paper-page {
+  box-shadow:
+    0 1px 0 rgba(20,30,25,0.06),
+    0 8px 22px rgba(20,30,25,0.10),
+    0 32px 60px rgba(20,30,25,0.10);
 }
-.ground-hl.ground-pulse { animation: ground-pulse-kf 800ms ease-out; }
-
-/* Numbered chip — appears at the end of a highlight, half-overlapping the wire gutter */
-.ground-chip {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: 50%;
-  margin-left: 6px; vertical-align: middle;
-  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
-  color: #fff; user-select: none; cursor: pointer;
-  transition: var(--transition-fast);
+.paper-page:hover {
+  box-shadow:
+    0 1px 0 rgba(0,0,0,0.04),
+    0 10px 22px rgba(0,0,0,0.14),
+    0 40px 70px rgba(0,0,0,0.16);
 }
-.ground-chip.sev-critical { background: var(--sev-critical); }
-.ground-chip.sev-high     { background: var(--sev-high); }
-.ground-chip.sev-medium   { background: var(--sev-medium); color: #1c1a10; }
-.ground-chip.sev-low      { background: var(--sev-low); }
-.ground-chip:hover, .ground-chip.ground-active { transform: scale(1.12); }
 
-/* Grounding cards (right side) */
-.ground-card {
+.paper-page .paper-tab {
+  position: absolute; top: -22px; left: 0;
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--text-secondary); letter-spacing: 0.04em;
+  display: flex; align-items: center; gap: 6px;
+}
+.paper-page .paper-tab .dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--text-muted);
+}
+.paper-page .paper-header {
+  text-align: center;
+  border-bottom: 0.5px solid #d9d2c1;
+  padding-bottom: 14px; margin-bottom: 20px;
+}
+.paper-page .paper-header h1 {
+  margin: 0; font-family: var(--font-serif);
+  font-size: 16px; font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: #1f1c1a;
+}
+.paper-page .paper-header .paper-sub {
+  margin: 6px 0 0; font-family: var(--font-mono);
+  font-size: 10.5px; color: #6b6760; letter-spacing: 0.03em;
+}
+.paper-page h2 {
+  font-family: var(--font-serif);
+  font-size: 13px; font-weight: 500; letter-spacing: 0.06em;
+  text-transform: uppercase; color: #1f1c1a;
+  margin: 26px 0 8px;
+  padding-bottom: 3px; border-bottom: 0.5px solid #e6dfcc;
+}
+.paper-page h3 {
+  font-family: var(--font-serif);
+  font-size: 14px; font-weight: 500;
+  color: #1f1c1a;
+  margin: 18px 0 6px;
+}
+.paper-page p {
+  margin: 0 0 12px;
+  font-size: 13.5px;
+}
+.paper-page strong { font-weight: 500; }
+
+/* Highlight inside paper — warm coral wash, looks hand-marked */
+.paper-page .pp-hl {
+  background: #FFE6D9;
+  color: #6b3a0a;
+  padding: 0 4px;
+  border-radius: 2px;
+  box-decoration-break: clone; -webkit-box-decoration-break: clone;
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+.paper-page .pp-hl.is-active {
+  background: #FFD4B8;
+  box-shadow: 0 0 0 2px rgba(217,103,73,0.25);
+}
+
+/* Numbered chip in the page margin */
+.paper-chip {
+  position: absolute;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #D4533B; color: #fff;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid #FFFEF7;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+  z-index: 4;
+  user-select: none;
+}
+.paper-chip:hover, .paper-chip.is-active {
+  transform: scale(1.12);
+  box-shadow: 0 4px 12px rgba(212,83,59,0.42);
+}
+.paper-chip.sev-critical { background: #ff5a3d; }
+.paper-chip.sev-high     { background: #D4533B; }
+.paper-chip.sev-medium   { background: #d99a3b; color: #2a1b04; }
+.paper-chip.sev-low      { background: #8aa298; }
+
+/* Wires colored by severity */
+.grounding-wires path.gw-line.sev-critical { stroke: #ff5a3d; stroke-width: 1.5; }
+.grounding-wires path.gw-line.sev-high     { stroke: #D4533B; stroke-width: 1.5; }
+.grounding-wires path.gw-line.sev-medium   { stroke: #d99a3b; stroke-width: 1.5; }
+.grounding-wires path.gw-line.sev-low      { stroke: #8aa298; stroke-width: 1.5; }
+.grounding-wires path.gw-line.is-dimmed    { opacity: 0.12; }
+.grounding-wires path.gw-line.is-active    { stroke-width: 2.5; opacity: 1; }
+
+/* ── Bottom info card ── */
+.grounding-info-card {
+  position: absolute;
+  bottom: 18px; left: 50%; transform: translateX(-50%);
+  width: min(640px, calc(100% - 40px));
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--text-muted);
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-  cursor: pointer;
-  transition: var(--transition-fast);
-  position: relative;
+  padding: 14px 18px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  z-index: 5;
+  animation: gif-in 220ms ease-out;
 }
-.ground-card.sev-critical { border-left-color: var(--sev-critical); }
-.ground-card.sev-high     { border-left-color: var(--sev-high); }
-.ground-card.sev-medium   { border-left-color: var(--sev-medium); }
-.ground-card.sev-low      { border-left-color: var(--sev-low); }
-.ground-card:hover, .ground-card.ground-active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-subtle);
+.grounding-info-card[hidden] { display: none; }
+@keyframes gif-in {
+  from { transform: translateX(-50%) translateY(8px); opacity: 0; }
+  to   { transform: translateX(-50%) translateY(0);   opacity: 1; }
 }
-.ground-card-head {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
-  font-family: var(--font-display); font-size: 10.5px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.06em;
+.grounding-info-card.sev-critical { border-left-color: #ff5a3d; }
+.grounding-info-card.sev-high     { border-left-color: #D4533B; }
+.grounding-info-card.sev-medium   { border-left-color: #d99a3b; }
+.grounding-info-card.sev-low      { border-left-color: #8aa298; }
+.gif-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px;
 }
-.ground-card-num {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; border-radius: 50%;
-  background: var(--text-muted); color: #fff;
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+.gif-badge {
+  font-family: var(--font-display); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 3px;
+  background: rgba(212,83,59,0.14); color: #D4533B;
 }
-.ground-card.sev-critical .ground-card-num { background: var(--sev-critical); }
-.ground-card.sev-high     .ground-card-num { background: var(--sev-high); }
-.ground-card.sev-medium   .ground-card-num { background: var(--sev-medium); color: #1c1a10; }
-.ground-card.sev-low      .ground-card-num { background: var(--sev-low); }
-.ground-card .tier-badge {
-  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
-  background: var(--bg-elevated); border: 1px solid var(--border);
-  color: var(--text-secondary);
-  padding: 1px 6px; border-radius: var(--radius-sm);
+.gif-control {
+  font-family: var(--font-mono); font-size: 12.5px; font-weight: 500;
+  color: var(--text-primary);
 }
-.ground-card-title {
-  font-family: var(--font-mono); font-size: 13px; font-weight: 500;
-  color: var(--text-primary); margin: 4px 0 8px;
+.gif-control .gif-title { color: var(--text-secondary); margin-left: 6px; }
+.gif-close {
+  margin-left: auto;
+  background: transparent; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 6px;
 }
-.ground-card-control {
-  font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);
-  margin-bottom: 6px;
+.gif-close:hover { color: var(--text-primary); }
+.gif-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  margin-top: 8px;
 }
-.ground-card-control b { color: var(--text-primary); }
-.ground-card-quote {
-  font-family: var(--font-serif); font-style: italic; font-size: 12px;
-  color: var(--text-secondary);
+.gif-quote {
   background: var(--bg-elevated);
   border-left: 2px solid var(--border-strong);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  padding: 6px 10px;
-  margin: 6px 0;
-  line-height: 1.5;
-}
-.ground-card.sev-critical .ground-card-quote { border-left-color: var(--sev-critical); }
-.ground-card.sev-high     .ground-card-quote { border-left-color: var(--sev-high); }
-.ground-card.sev-medium   .ground-card-quote { border-left-color: var(--sev-medium); }
-.ground-card-rationale, .ground-card-recommendation {
-  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55;
+  border-radius: 0 4px 4px 0;
+  padding: 8px 12px;
+  font-family: var(--font-serif); font-style: italic; font-size: 12.5px;
   color: var(--text-secondary);
-  margin: 6px 0 0;
+  line-height: 1.55;
 }
-.ground-card-rationale b, .ground-card-recommendation b {
-  color: var(--text-primary); font-weight: 500;
+.gif-quote .gif-q-source {
+  display: block; font-family: var(--font-mono); font-style: normal;
+  font-size: 10.5px; color: var(--text-muted); margin-bottom: 4px;
+  letter-spacing: 0.03em;
 }
-.ground-card-conflicts {
-  display: flex; flex-direction: column; gap: 4px;
-  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-subtle);
+.gif-rule {
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: rgba(92,201,138,0.06);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  font-family: var(--font-serif); font-style: italic; font-size: 12.5px;
+  color: var(--text-secondary); line-height: 1.55;
 }
-.ground-card-conflicts-label {
-  font-family: var(--font-display); font-size: 9.5px; font-weight: 700;
-  letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
+.gif-rule .gif-rule-label {
+  display: block; font-family: var(--font-display); font-style: normal;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 3px;
 }
-.ground-conflict-pill {
-  align-self: flex-start;
-  background: var(--bg-elevated); border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 2px 8px;
-  font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);
-  cursor: pointer; transition: var(--transition-fast);
-}
-.ground-conflict-pill:hover { border-color: var(--accent); color: var(--accent); }
-.ground-card-actions { margin-top: 10px; }
 
-/* Dimming when something else is hovered */
-.grounding-panel.is-dimming .ground-chip:not(.ground-active),
-.grounding-panel.is-dimming .ground-card:not(.ground-active),
-.grounding-panel.is-dimming .ground-hl:not(.ground-active),
-.grounding-panel.is-dimming .ground-wire-gutter svg path:not(.ground-active) {
-  opacity: 0.25;
+/* When NOTHING in the canvas is loaded yet */
+.grounding-empty {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+  font-family: var(--font-serif); font-style: italic; font-size: 14px;
+  pointer-events: none;
 }

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>QUILL — RMF Pre-Adjudication Terminal</title>
 <link rel="icon" type="image/png" href="./quill-owl.png" />
-<link rel="stylesheet" href="./styles.css?v=30" />
+<link rel="stylesheet" href="./styles.css?v=31" />
 </head>
 <body>
 
@@ -450,30 +450,32 @@
     </div>
 
     <!-- ============ VIEW 07: VISUAL GROUNDING (Phase II) ============ -->
-    <div class="view-frame" id="view-grounding">
-      <header class="view-header map-header">
-        <div class="map-header-left">
+    <div class="view-frame view-frame-bleed" id="view-grounding">
+      <div class="grounding-canvas" id="groundingCanvas">
+        <div class="grounding-topbar">
           <button class="btn-ghost btn-small" id="groundingBackBtn" aria-label="back to packages">← Packages</button>
-          <div>
-            <h2>Visual grounding</h2>
-            <p class="view-sub" id="groundingSubtitle">—</p>
+          <div class="grounding-meta">
+            <h2 class="grounding-title">Visual grounding</h2>
+            <p class="grounding-sub" id="groundingSubtitle">—</p>
+          </div>
+          <div class="grounding-zoom-controls">
+            <button class="zoom-btn" id="zoomFitBtn" title="Fit all pages">Fit all</button>
+            <button class="zoom-btn" id="zoomOutBtn" title="Zoom out" aria-label="zoom out">−</button>
+            <span class="zoom-readout" id="zoomReadout">100%</span>
+            <button class="zoom-btn" id="zoomInBtn" title="Zoom in" aria-label="zoom in">+</button>
           </div>
         </div>
-      </header>
 
-      <div class="grounding-toolbar" id="groundingToolbar">
-        <div class="grounding-filter-chips" role="tablist" aria-label="Grounding filters">
-          <button type="button" class="filter-chip is-active" data-filter="all">All</button>
-          <button type="button" class="filter-chip" data-filter="contradictions">Contradictions only</button>
-          <button type="button" class="filter-chip" data-filter="tier2">Tier 2 only</button>
-          <button type="button" class="filter-chip" data-filter="sev-high">Severity ≥ high</button>
+        <div class="grounding-banner" id="groundingBanner" hidden></div>
+
+        <div class="grounding-stage" id="groundingStage">
+          <div class="grounding-viewport" id="groundingViewport">
+            <svg class="grounding-wires" id="groundingWires" xmlns="http://www.w3.org/2000/svg"></svg>
+          </div>
         </div>
-        <span class="grounding-count-chip" id="groundingCountChip">0 of 0 shown</span>
+
+        <div class="grounding-info-card" id="groundingInfoCard" hidden></div>
       </div>
-
-      <div class="grounding-body" id="groundingBody"></div>
-
-      <div class="grounding-banner" id="groundingBanner" hidden></div>
     </div>
 
   </section>
@@ -503,7 +505,7 @@
   </div>
 </div>
 
-<script src="./app.js?v=32"></script>
+<script src="./app.js?v=33"></script>
 <script>
 (function(){
   var root=document.documentElement, KEY='quill-theme';

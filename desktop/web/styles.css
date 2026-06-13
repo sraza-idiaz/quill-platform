@@ -1672,3 +1672,19 @@ textarea:focus-visible, .file-drop:focus-within, .nav-link:focus-visible,
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 }
 .grounding-zoom-controls { flex-shrink: 0; }
+
+/* "Why flagged" explanation line in the grounding info card */
+.gif-why {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  font-family: var(--font-serif); font-size: 13.5px; line-height: 1.5;
+  color: var(--text-primary);
+}
+.gif-why .gif-why-label {
+  display: block; margin-bottom: 3px;
+  font-family: var(--font-display); font-style: normal;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-muted);
+}

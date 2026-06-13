@@ -3010,6 +3010,7 @@ function _selectThread(fid) {
       <div class="gif-side-label"><span class="gif-side-dot" style="background: var(--accent);"></span>${escapeHtml(c.filename || "")} · ${escapeHtml(c.locator || "")}</div>
       <div class="gif-quote">${escapeHtml((c.quote || "").replace(/\*\*/g, "").trim())}</div>
     </div>`).join("");
+  const why = _explainThread(t);
   card.className = "grounding-info-card";
   card.innerHTML = `
     <div class="gif-head">
@@ -3017,6 +3018,7 @@ function _selectThread(fid) {
       <span class="gif-control">${escapeHtml(t.control_id)}<span class="gif-ctrl-title">${t.control_title ? " · " + escapeHtml(t.control_title) : ""}</span></span>
       <button class="gif-close" id="gifClose" aria-label="close">×</button>
     </div>
+    ${why ? `<div class="gif-why"><span class="gif-why-label">Why flagged</span>${escapeHtml(why)}</div>` : ""}
     <div class="gif-grid">
       <div>
         <div class="gif-side-label"><span class="gif-side-dot" style="background: var(--accent);"></span>${escapeHtml(p.filename || "")} · ${escapeHtml(p.locator || "")}</div>
@@ -3027,6 +3029,33 @@ function _selectThread(fid) {
     </div>`;
   card.hidden = false;
   $("#gifClose")?.addEventListener("click", () => _clearThread());
+}
+
+// Short plain-language "why" line for a contradiction. Prefers the finding's
+// rationale (LLM-written for Tier 2; rule-generated for Tier 0), stripped of
+// internal noise — the trailing "[severity factors: …]" tag and the
+// "(art-xxxx: ['monthly']; art-yyyy: ['quarterly'])" artifact-id dump. Falls
+// back to the recommendation, then to a composed one-liner.
+function _explainThread(t) {
+  let r = (t.rationale || "").trim();
+  // Drop any bracketed severity/factor annotation.
+  r = r.replace(/\s*\[[^\]]*\]\s*$/g, "").trim();
+  // Replace the raw "(art-xxxx: [...]; ...)" dump with the human values.
+  r = r.replace(/\(art-[^)]*\)/g, "").replace(/\s{2,}/g, " ").trim();
+  // Translate the rule's stock phrasing into something readable.
+  r = r.replace(/states conflicting values across artifacts after synonym normalization\.?/i,
+                "states conflicting values across two documents.");
+  // Tidy orphaned punctuation left by the removals.
+  r = r.replace(/\s+([.,;:])/g, "$1").replace(/\.{2,}/g, ".").replace(/[\s.]+$/, "").trim();
+  if (r && r.length > 4) {
+    r = r.length > 240 ? r.slice(0, 237).trimEnd() + "…" : r + ".";
+    return r;
+  }
+  if (t.recommendation) return t.recommendation;
+  const peerNames = (t.conflicts_with || []).map(c => c.filename).filter(Boolean);
+  const peer = peerNames.length ? peerNames[0] : "another document";
+  return `${t.primary?.filename || "This document"} and ${peer} give different values for `
+       + `${t.control_id}${t.control_title ? " (" + t.control_title + ")" : ""}. Reconcile them so the package is internally consistent.`;
 }
 
 function _clearThread() {

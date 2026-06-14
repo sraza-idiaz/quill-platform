@@ -43,6 +43,31 @@ FREQ_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Sentence boundary — split on ., !, ? followed by whitespace.
+_SENTENCE_END_RE = re.compile(r"[.!?](?:\s|$)")
+
+
+def _conflict_sentence(text: str) -> tuple[str, int, int]:
+    """Narrow a cited segment to the single sentence carrying the conflicting
+    cadence token, so the citation (and the UI highlight) points at the
+    actual contradiction — not a neighbouring sentence in the same paragraph.
+
+    Returns (sentence_text, char_start_offset, char_end_offset) relative to
+    `text`. Falls back to the first 300 chars when no frequency token is found
+    (e.g. a synonym-table-only match), preserving prior behaviour.
+    """
+    m = FREQ_RE.search(text)
+    if not m:
+        return text[:300], 0, min(len(text), 300)
+    # Sentence start: just after the previous sentence terminator.
+    start = 0
+    for sm in _SENTENCE_END_RE.finditer(text, 0, m.start()):
+        start = sm.end()
+    # Sentence end: through the next terminator (inclusive of the '.').
+    em = _SENTENCE_END_RE.search(text, m.end())
+    end = em.start() + 1 if em else len(text)
+    return text[start:end].strip(), start, end
+
 # Coarse keyword expansion for required-field presence (deterministic net;
 # Tier 2 does the real judgment). Field name -> accepted keyword fragments.
 _FIELD_SYNONYMS: dict[str, list[str]] = {
@@ -300,10 +325,16 @@ def check_cross_artifact_consistency(
             tokens.update(synonyms.find_canonical_phrases(s.text))
         if tokens:
             by_control.setdefault(s.control_hint, {}).setdefault(s.artifact_id, set()).update(tokens)
+            # Cite the exact sentence carrying the conflicting cadence, not the
+            # whole paragraph — keeps the citation (and UI highlight) on the
+            # contradiction itself (FR rule #3: exact quoted text).
+            quote, off_s, off_e = _conflict_sentence(s.text)
             span_by.setdefault(
                 (s.control_hint, s.artifact_id),
                 EvidenceSpan(artifact_id=s.artifact_id, locator=s.locator,
-                             quoted_text=s.text[:300], char_start=s.char_start, char_end=s.char_end),
+                             quoted_text=quote[:300],
+                             char_start=s.char_start + off_s,
+                             char_end=s.char_start + off_e),
             )
 
     for control_id, per_artifact in by_control.items():
